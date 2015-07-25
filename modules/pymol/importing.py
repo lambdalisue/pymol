@@ -293,7 +293,7 @@ DESCRIPTION
     "load_traj" reads trajectory files (currently just AMBER files).
     The file extension is used to determine the format.
 
-    AMBER files must end in ".trj" 
+    AMBER files must end in ".trj", ".crd", ".inpcrd", or ".mdcrd"
 
 USAGE
 
@@ -350,7 +350,7 @@ SEE ALSO
                 type = -1
             elif not type:
                 # determine file type if possible
-                if re.search("\.trj$",filename,re.I):
+                if re.search("\.trj$|\.crd$|\.inpcrd$|\.mdcrd$",filename,re.I):
                     ftype = loadable.trj
                     plugin = ""
                     try: # autodetect gromacs TRJ
@@ -691,9 +691,9 @@ SEE ALSO
                     ftype = loadable.cex
                 elif re.search("\.pmo$",fname_no_gz,re.I):
                     ftype = loadable.pmo
-                elif re.search("\.top$",fname_no_gz,re.I):
+                elif re.search("\.top$|\.prmtop$",fname_no_gz,re.I):
                     ftype = loadable.top
-                elif re.search("\.trj$",fname_no_gz,re.I):
+                elif re.search("\.trj$|\.crd$|\.inpcrd$|\.mdcrd$",fname_no_gz,re.I):
                     ftype = loadable.trj
                 elif re.search("\.trr$",fname_no_gz,re.I):
                     ftype = loadable.trr
@@ -707,8 +707,8 @@ SEE ALSO
                     ftype = loadable.g96
                 elif re.search("\.dcd$",fname_no_gz,re.I):
                     ftype = loadable.dcd
-                elif re.search("\.crd$",fname_no_gz,re.I):
-                    ftype = loadable.crd
+                #elif re.search("\.crd$",fname_no_gz,re.I):
+                #    ftype = loadable.crd
                 elif re.search("\.rst7?$",fname_no_gz,re.I):
                     ftype = loadable.rst
                 elif re.search("\.pse$|\.pze|\.pzw$",fname_no_gz,re.I):

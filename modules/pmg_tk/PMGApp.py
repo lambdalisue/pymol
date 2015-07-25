@@ -123,6 +123,11 @@ class PMGApp(Pmw.MegaWidget):
                 ("All Readable","*.mtz"),                 
                 ("All Readable","*.vis"),
                 ("All Readable","*.psf"),
+                ("All Readable","*.top"),
+                ("All Readable","*.prmtop"),
+                ("All Readable","*.crd"),
+                ("All Readable","*.inpcrd"),
+                ("All Readable","*.mdcrd"),
                 ("PDB File","*.pdb"),
                 ("PDB1 File","*.pdb1"),                
                 ("All Files","*.*"),
@@ -162,6 +167,11 @@ class PMGApp(Pmw.MegaWidget):
                 ("CLUSTAL file","*.aln"),
                 ("ACNT Map","*.acnt"),                 
                 ("Protein Structure File","*.psf"),
+                ("AMBER Topology File","*.top"),
+                ("AMBER Topology File","*.prmtop"),
+                ("AMBER Coordinate File","*.crd"),
+                ("AMBER Coordinate File","*.inpcrd"),
+                ("AMBER Coordinate File","*.mdcrd"),
                 ]
 
     def initializeTk_colors_common(self):

@@ -474,24 +474,24 @@ PyMOL COMMAND LINE OPTIONS
     <file> can have one of the following extensions, and all 
     files provided will be loaded or run after PyMOL starts.
 
-     .pml            PyMOL command script to be run on startup
-     .py, .pym, .pyc Python program to be run on startup
-     .pdb            Protein Data Bank format file to be loaded on startup
-     .mmod           Macromodel format to be loaded on startup
-     .mol            MDL MOL file to be loaded on startup
-     .sdf            MDL SD file to be parsed and loaded on startup
-     .xplor          X-PLOR Map file (ASCII) to be loaded on startup
-     .ccp4           CCP4 map file (BINARY) to be loaded on startup
-     .cc1, .cc2      ChemDraw 3D cartesian coordinate file
-     .pkl            Pickled ChemPy Model (class "chempy.model.Indexed")
-     .r3d            Raster3D file
-     .cex            CEX file (Metaphorics)
-     .top            AMBER topology file
-     .crd            AMBER coordinate file
-     .rst            AMBER restart file
-     .trj            AMBER trajectory
-     .pse            PyMOL session file
-     .phi            Delphi/Grasp Electrostatic Potential Map
+     .pml                  PyMOL command script to be run on startup
+     .py, .pym, .pyc       Python program to be run on startup
+     .pdb                  Protein Data Bank format file to be loaded on startup
+     .mmod                 Macromodel format to be loaded on startup
+     .mol                  MDL MOL file to be loaded on startup
+     .sdf                  MDL SD file to be parsed and loaded on startup
+     .xplor                X-PLOR Map file (ASCII) to be loaded on startup
+     .ccp4                 CCP4 map file (BINARY) to be loaded on startup
+     .cc1, .cc2            ChemDraw 3D cartesian coordinate file
+     .pkl                  Pickled ChemPy Model (class "chempy.model.Indexed")
+     .r3d                  Raster3D file
+     .cex                  CEX file (Metaphorics)
+     .top, .prmtop         AMBER topology file
+     .crd, .inpcrd, .mdcrd AMBER coordinate file
+     .rst                  AMBER restart file
+     .trj                  AMBER trajectory
+     .pse                  PyMOL session file
+     .phi                  Delphi/Grasp Electrostatic Potential Map
         '''
         _self.help('launching')
 

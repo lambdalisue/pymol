@@ -26,9 +26,9 @@ file_ext_re = re.compile(string.join([
     r"\.idx$|", # Desmond Traj (proprietary)
     r"\.spi$|\.spider$|", # Spider Map
     r"\.ccp4$|\.mrc$|\.map$|", # CCP4
-    r"\.top$|", # AMBER Topology
+    r"\.top$|\.prmtop$|", # AMBER Topology
     r"\.trj$|", # AMBER Trajectory
-    r"\.crd$|", # AMBER coordinate file
+    r"\.crd$|\.inpcrd$|\.mdcrd$|", # AMBER coordinate file
     r"\.rst7?$|", # AMBER restart
     r"\.psf$|", # protein structure file
     r"\.cex$|", # CEX format (used by metaphorics)
