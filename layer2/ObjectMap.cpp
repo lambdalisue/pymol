@@ -4795,7 +4795,7 @@ static int ObjectMapDXStrToMap(ObjectMap * I, char *DXStr, int bytes, int state,
     if(strcmp(cc, "object") == 0) {
       p = ParseWordCopy(cc, p, 20);
       p = ParseNTrim(cc, p, 29);
-      if(strcmp(cc, "class array type double rank") == 0) {
+      if(strcmp(cc, "class array type double rank") == 0 || strcmp(cc, "class array type float rank") == 0) {
         p = ParseWordCopy(cc, p, 20);
         p = ParseWordCopy(cc, p, 20);
         p = ParseWordCopy(cc, p, 20);
