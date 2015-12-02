@@ -47,6 +47,7 @@ from creating import \
       slice_new,          \
       symexp,             \
       ramp_new,           \
+      ramp_update,        \
       ungroup,            \
       volume
 
@@ -100,12 +101,14 @@ from querying import \
       find_pairs,         \
       get_angle,          \
       get_area,           \
+      get_assembly_ids,   \
       get_chains,         \
       get_collada,        \
       get_color_index,    \
       get_color_indices,  \
       get_object_color_index, \
       get_object_list,    \
+      get_object_state,   \
       get_color_tuple,    \
       get_atom_coords,    \
       get_coords,         \
@@ -124,6 +127,7 @@ from querying import \
       get_legal_name,     \
       get_unused_name,    \
       get_object_matrix,  \
+      get_object_ttt,     \
       get_mtl_obj,        \
       get_phipsi,         \
       get_position,       \
@@ -428,6 +432,7 @@ from experimenting import \
       test
 
 from internal import      \
+      download_chem_comp, \
       file_read
 
 #--------------------------------------------------------------------

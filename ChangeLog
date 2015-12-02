@@ -2,6 +2,154 @@
 CHANGE LOG
 =========================================================================
 
+2015-11-18 Thomas Holder, Blaine Bell, Gabriel Marques
+
+	* 1.8.0.0
+
+	* Tcl/Tk Settings GUI: feedback, radio buttons, font size dialog
+
+	* default alignment_as_cylinders changed to off
+
+2015-10-15 Thomas Holder <thomas.holder@schrodinger.com>
+
+	* new default: scene_buttons=on
+
+	* normalize_ccp4_maps=2 -> use mean and stdev from file header
+
+	* fix alignment with atoms w/o coords in a state
+
+2015-10-06 Thomas Holder <thomas.holder@schrodinger.com>
+
+	* new filetypes: pdbml, pdbqt, cml
+
+	* cell/symmetry: accept alpha=beta=gamma=0.0 as 90.0
+
+	* leave unknown protons as -1 instead of 0 (lonepair), fixes
+	  vdw assingment for unknown elements (1.8 instead of 0.5)
+
+	* reimplement reading full sequence from mmCIF. Only with
+	  cif_use_auth=off and retain_order=off. Fill in missing
+	  CA atoms for polypeptides.
+
+	* new API function cmd.get_object_ttt()
+
+	* APBS Plugin: --whitespace argument for pdb2pqr
+
+	* fix scene next/previous, was broken on Windows 10
+
+	* fix split_states with non-unique titles
+
+	* fix "File > Run" fails if path has spaces
+
+2015-08-30 Thomas Holder <thomas.holder@schrodinger.com>
+
+	* fix cartoon_trace_atoms for beta-sheets
+
+	* fast connect_mode=4: Add $PYMOL_DATA/chem_comp_bond-top100.cif
+	  which is a subset of the components.cif dictionary and contains
+	  only bond records for the 100 most frequent monomers in the PDB.
+	  Download other monomers on-demand from PDBeChem.
+
+2015-08-12 Thomas Holder <thomas.holder@schrodinger.com>
+
+	* cif_keepinmemory, pymol.querying.cif_get_array (experimental)
+
+	* ramp_update (new command)
+
+	* ramp objects now have "A > Range > ..." and "C > ..." menus
+
+	* mmCIF _chem_comp_atom:
+	  - skip atoms with missing coordinates
+	  - prefer ideal over model coordinates
+
+	* cmd.set_key() decorator support
+
+2015-07-29 Thomas Holder <thomas.holder@schrodinger.com>
+
+	* fix isosurface all_states rendering
+
+	* pdb_hetatm_guess_valences for CIF loading
+
+	* mutagenesis wizard: improve "apply" performance
+
+	* fix measurement and alignment object partial PSE loading
+
+	* some load/save refactoring
+
+	* keep atom IDs when creating object from selection
+
+	* when renaming group "A" to "B", then also rename entry "A.X" to "B.X"
+
+2015-07-02 Thomas Holder <thomas.holder@schrodinger.com>
+
+	* mmcif: match pdb1, pdb2, ... files with assembly generation
+	  - fix handling of _pdbx_struct_assembly_gen with repeated asym_id
+	  - create assembly for multi-state objects
+	  - no pdb_insure_orthogonal for assemblies
+
+	* fix "File > Run"
+
+2015-06-23 Thomas Holder <thomas.holder@schrodinger.com>
+
+	* fix assemblies for cases like 4f3r which have multiple entries in
+	  the _pdbx_struct_assembly_gen table
+
+	* fix ref counts in iterate/alter subscripts
+
+	* improve side_chain_helper and nucleic_adic_mode situation
+
+	* eliminate all "try/catch" blocks for std::map lookups
+
+	* clean up some MemoryDebug stuff and remove unused jenarix wrapper
+
+2015-06-17 Thomas Holder <thomas.holder@schrodinger.com>
+
+	* Experimental: cmd.get_assembly_ids
+
+	* mmCIF: support "_atom_site.pdbe_label_seq_id"
+
+	* mmCIF: set "ignore" flag for HETATMSs (no surface)
+
+	* improve memory usage and performance of components.cif parsing
+
+2015-06-10 Thomas Holder <thomas.holder@schrodinger.com>
+
+	* fetch 'cif' by default (was: pdb)
+
+	* warn if selecting with lower-case arguments to help identifying
+	  legacy selections which are incompatible with ignore_case=0
+
+	* port selection macro parsing from Python to C
+
+	* fix https://sf.net/p/pymol/bugs/169/ (cmd.fab() with existing object
+	  name produces unexpected results and downstream segfault)
+
+2015-05-20 Thomas Holder <thomas.holder@schrodinger.com>
+
+	* change default (!) of "ignore_case" setting to off. Case insensitve
+	  identifier matching is not practical anymore with large structures
+	  which use upper and lower case chain identifiers.
+
+	* new setting "assembly" to load assemblies from mmCIF as multi-state
+	  objects with all_states=1
+
+	* new setting "cif_use_auth" controls whether mmCIF "auth" identifiers
+	  are used or not (on by default)
+
+	* mmCIF "CA/P ATOMS ONLY" chains: set atom-level cartoon_trace_atoms
+	  and ribbon_trace_atoms
+
+	* CIF discrete and irregular multi-model loading support
+
+	* support "pdb_honor_model_number" setting for CIF
+
+	* load multiple objects ("data_" blocks) from one CIF file (multiplex=-1)
+
+	* don't store AtmToIdx, DiscreteAtmToIdx or DiscreteCSet to PSE
+	  (unless pse_export_version <= 1.76)
+
+	* 1.7.7.1 (unstable/experimental)
+
 2015-05-04 Thomas Holder, Blaine Bell, Gabriel Marques
 
 	* 1.7.6.0

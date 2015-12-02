@@ -27,6 +27,9 @@ Z* -------------------------------------------------------------------
 #include"Raw.h"
 #include"DistSet.h"
 #include "Executive_pre.h"
+#include "CifFile.h"
+
+#include <memory>
 
 #define cKeywordAll "all"
 #define cKeywordNone "none"
@@ -61,7 +64,7 @@ typedef struct ObjectMolecule {
   int NAtom, prevNAtom;
   int NBond, prevNBond;
 	/* is this object loaded as a discrete object? if so, number of states */
-  int DiscreteFlag, NDiscrete;
+  int DiscreteFlag;
   int *DiscreteAtmToIdx;
   struct CoordSet **DiscreteCSet;
   /* proposed, for storing uniform trajectory data more efficiently:
@@ -82,8 +85,16 @@ typedef struct ObjectMolecule {
   int RepVisCacheValid;
   int RepVisCache;     /* for transient storage during updates */
 
+  // for reporting available assembly ids after mmCIF loading - SUBJECT TO CHANGE
+#ifndef _PYMOL_NO_CXX11
+  std::shared_ptr<cif_file> m_ciffile;
+#endif
+  const cif_data * m_cifdata;
+
   // methods
   int getState();
+  bool setNDiscrete(int natom);
+  bool updateAtmToIdx();
 } ObjectMolecule;
 
 /* this is a record that holds information for specific types of Operatations on Molecules, eg. translation/rotation/etc */
@@ -119,12 +130,23 @@ typedef struct {
   float matrix[16];
 } PDBScale;
 
+enum {
+  PDB_VARIANT_DEFAULT = 0,
+  PDB_VARIANT_PQR,
+  PDB_VARIANT_PDBQT,
+};
+
 typedef struct {
-  int is_pqr_file, pqr_workarounds;
+  int variant;
+  int pqr_workarounds;
   PDBScale scale;
   int ignore_header_names;
   int multi_object_status;      /* 0 = unknown, 1 = is multi_object, -1 is not multi_object */
   int multiplex;
+
+  inline bool is_pqr_file() {
+    return variant == PDB_VARIANT_PQR;
+  }
 } PDBInfoRec;
 
 
@@ -434,7 +456,6 @@ void ObjectMoleculeGetAtomSeleLog(ObjectMolecule * I, int index, char *buffer, i
 int ObjectMoleculeMultiSave(ObjectMolecule * I, const char *fname, FILE * f, int state,
                             int append, int format, int quiet);
 
-void ObjectMoleculeResetIDNumbers(ObjectMolecule * I);
 void ObjectMoleculeUpdateIDNumbers(ObjectMolecule * I);
 
 void ObjectMoleculeSculptImprint(ObjectMolecule * I, int state, int match_state,
@@ -500,6 +521,11 @@ int *AtomInfoGetSortedIndex(PyMOLGlobals * G, ObjectMolecule * obj, AtomInfoType
                             int **outdex);
 
 ObjectMolecule *ObjectMoleculeReadCifStr(PyMOLGlobals * G, ObjectMolecule * I,
-    const char *st, int frame, int discrete, int quiet, int multiplex, char *new_name);
+    const char *st, int frame, int discrete, int quiet, int multiplex, int zoom);
+
+// object and object-state level setting
+template <typename V> void SettingSet(int index, V value, ObjectMolecule * I, int state=-1) {
+  SettingSet(index, value, (CObject*)I, state);
+}
 
 #endif

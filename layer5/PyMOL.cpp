@@ -571,7 +571,7 @@ static OVstatus PyMOL_InitAPI(CPyMOL * I)
 #ifndef _PYMOL_NOPY
   LEX_ATOM_PROP(model, 0, cPType_model, 0);
   LEX_ATOM_PROP(index, 1, cPType_index, 0);
-  LEX_ATOM_PROP(type, 2, cPType_char_as_type, offsetof(AtomInfoType,hetatm));
+  LEX_ATOM_PROP(type, 2, cPType_char_as_type, 0);
   LEX_ATOM_PROP_S(name, 3, cPType_string, offsetof(AtomInfoType,name), cAtomNameLen);
   LEX_ATOM_PROP_S(resn, 4, cPType_string, offsetof(AtomInfoType,resn), cResnLen);
   LEX_ATOM_PROP_S(resi, 5, cPType_string, offsetof(AtomInfoType,resi), cResiLen);
@@ -1624,14 +1624,6 @@ static PyMOLreturn_status Loader(CPyMOL * I, const char *content, const char *co
     }
   }
   if(ok) {
-
-    /* handling of multiplex option */
-
-    if(multiplex == -2)         /* use setting default value */
-      multiplex = SettingGetGlobal_i(I->G, cSetting_multiplex);
-    if(multiplex < 0)           /* default behavior is not to multiplex */
-      multiplex = 0;
-
     {                           /* if object_name is blank and content is a filename, then 
                                    compute the object_name from the file prefix */
       if((!object_name[0]) && (type_code == I->lex_filename)) {
@@ -1665,7 +1657,6 @@ static PyMOLreturn_status Loader(CPyMOL * I, const char *content, const char *co
     }
     {
       int pymol_content_type = cLoadTypeUnknown;
-      CObject *existing_object = NULL;
 
       /* convert text format strings into integral load types */
 
@@ -1730,8 +1721,6 @@ static PyMOLreturn_status Loader(CPyMOL * I, const char *content, const char *co
       }
 
       if(ok) {
-        existing_object = ExecutiveGetExistingCompatible(I->G,
-                                                         object_name, pymol_content_type);
 
       /* measure the length if it wasn't provided */
 
@@ -1740,7 +1729,7 @@ static PyMOLreturn_status Loader(CPyMOL * I, const char *content, const char *co
           content_length = strlen(content);
       }
 
-        ok = ExecutiveLoad(I->G, existing_object,
+        ok = ExecutiveLoad(I->G,
                            content, content_length,
                            pymol_content_type,
                            object_name,
@@ -2728,8 +2717,8 @@ void PyMOL_SetPassive(CPyMOL * I, int onOff)
   I->PassiveFlag = onOff;
 }
 
-void PyMOL_SetClickReady(CPyMOL * I, char *name, int index, int button, int mod, int x,
-                         int y, float *pos, int state)
+void PyMOL_SetClickReady(CPyMOL * I, const char *name, int index, int button, int mod, int x,
+                         int y, const float *pos, int state)
 {
 
   if(name && name[0] && (index >= 0)) {
@@ -3361,15 +3350,9 @@ PyMOLreturn_float_array PyMOL_Spectrum(CPyMOL * I, char *expression, char *pal, 
   float min_ret, max_ret;
   char prefix[2];
   OVreturn_word pal_word;
-  OrthoLineType s1;
   char *palette = (char*)malloc(strlen(pal)+1);
     UtilNCopyToLower((char*)palette, pal, strlen(pal)+1);
   
-  if(selection[0])
-    ok = (SelectorGetTmp(I->G, selection, s1) >= 0);
-  else
-    s1[0] = 0;
-
   if (ok)
     ok = OVreturn_IS_OK(pal_word = get_palette(I, (char*)palette));  
   free(palette);
@@ -3380,8 +3363,8 @@ PyMOLreturn_float_array PyMOL_Spectrum(CPyMOL * I, char *expression, char *pal, 
   first = palette_data[array_pl++];
   last = palette_data[array_pl++];
 
-  ret = ExecutiveSpectrum(I->G, s1, expression, minimum, maximum, first, last, prefix, digits, byres, quiet, &min_ret, &max_ret);
-  SelectorFreeTmp(I->G, s1);
+  ret = ExecutiveSpectrum(I->G, selection, expression, minimum, maximum,
+      first, last, prefix, digits, byres, quiet, &min_ret, &max_ret);
 
   if (ret){
     result.size = 2;
@@ -3405,7 +3388,7 @@ PyMOLreturn_value PyMOL_GetVersion(CPyMOL * I){
   PYMOL_API_LOCK
   if(ok) {
     result.type = PYMOL_RETURN_VALUE_IS_STRING;
-    result.string = strdup(_PyMOL_VERSION);
+    result.string = mstrdup(_PyMOL_VERSION);
     result.status = PyMOLstatus_SUCCESS;
   };
   PYMOL_API_UNLOCK return result;

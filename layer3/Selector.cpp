@@ -51,6 +51,7 @@ Z* -------------------------------------------------------------------
 typedef char SelectorWordType[SelectorWordLength];
 
 #define cSelectorTmpPrefix "_sel_tmp_"
+#define cSelectorTmpPrefixLen 9 /* strlen(cSelectorTmpPrefix) */
 #define cSelectorTmpPattern "_sel_tmp_*"
 
 #define cNDummyModels 2
@@ -62,6 +63,37 @@ typedef char SelectorWordType[SelectorWordLength];
 
 /* special selections, unknown to executive */
 #define cColorectionFormat "_!c_%s_%d"
+
+#if 0
+// A lot of PyMOL's utility code used to select with lower case atomic
+// identifiers, making the code dependent on "ignore_case=1". The default
+// for this setting was changed to "0 (off)", which required to fix all
+// affected scripts (e.g. mutagenesis wizard, PYMOL-2487).
+// This is a debug/helper function to identify use of lower case
+// identifiers in selection expressions. Remove before the next official
+// release.
+void WARN_IF_LOWERCASE(PyMOLGlobals * G, const char * label, const char * text) {
+  if (!*text)
+    return;
+  for (const char * p = text; *p; ++p)
+    if (isupper(*p))
+      return;
+  PRINTFB(G, FB_Selector, FB_Warnings)
+    "SELECTOR-LOWER-WARNING: %s '%s'\n", label, text
+    ENDFB(G);
+}
+#else
+#define WARN_IF_LOWERCASE(G, a, b)
+#endif
+
+// Count how often `c` occurs in `s`
+static int strchrcount(const char *s, char c) {
+  int i = 0;
+  while(*s)
+    if(*(s++) == c)
+      i++;
+  return i;
+}
 
 static WordKeyValue rep_names[] = {
   {"spheres", cRepSphereBit},
@@ -563,6 +595,7 @@ static WordKeyValue Keyword[] = {
   {"idx.", SELE_IDXs},
 
   {"id", SELE_ID_s},
+  {"ID", SELE_ID_s},
   {"rank", SELE_RNKs},
 
   {"within", SELE_WIT_},
@@ -1491,7 +1524,6 @@ MapType *SelectorGetSpacialMapFromSeleCoord(PyMOLGlobals * G, int sele, int stat
         ObjectMolecule *obj;
         CoordSet *cs;
         int at;
-        AtomInfoType *ai;
         int idx;
         float *src, *dst;
         for(i = 0; i < n; i++) {
@@ -1499,7 +1531,6 @@ MapType *SelectorGetSpacialMapFromSeleCoord(PyMOLGlobals * G, int sele, int stat
 
           obj = I->Obj[I->Table[a].model];
           at = +I->Table[a].atom;
-          ai = obj->AtomInfo + at;
           for(st = 0; st < I->NCSet; st++) {
 
             if((state < 0) || (st == state)) {
@@ -1563,8 +1594,6 @@ static ov_diff SelectGetNameOffset(PyMOLGlobals * G, const char *name, ov_size m
     offset = 0;
     best_offset = -1;
     best_match = -1;
-    while(name[0] == '?')
-      name++;
 
     while(I_Name[offset][0]) {
       wm = WordMatch(G, name, I_Name[offset], ignCase);
@@ -2076,7 +2105,7 @@ int SelectorAssignSS(PyMOLGlobals * G, int target, int present,
       MapType *map;
       float *v0, *v1;
       int n1;
-      int c, i, h, k, l;
+      int i, h, k, l;
       int at;
 
       int a, aa;
@@ -2133,7 +2162,6 @@ int SelectorAssignSS(PyMOLGlobals * G, int target, int present,
         cutoff = hbc->maxDistAtZero;
       }
 
-      c = 0;
       n1 = 0;
 
       for(aa = 0; aa < I->NAtom; aa++) {        /* first, clear flags */
@@ -3524,7 +3552,6 @@ int SelectorGetPairIndices(PyMOLGlobals * G, int sele1, int state1, int sele2, i
   int c;
   float dist;
   int a1, a2;
-  AtomInfoType *ai1, *ai2;
   int at1, at2;
   CoordSet *cs1, *cs2;
   ObjectMolecule *obj1, *obj2;
@@ -3571,10 +3598,6 @@ int SelectorGetPairIndices(PyMOLGlobals * G, int sele1, int state1, int sele2, i
         cs1 = obj1->CSet[state1];
         cs2 = obj2->CSet[state2];
         if(cs1 && cs2) {
-
-          ai1 = obj1->AtomInfo + at1;
-          ai2 = obj2->AtomInfo + at2;
-
           idx1 = cs1->atmToIdx(at1);
           idx2 = cs2->atmToIdx(at2);
 
@@ -5211,7 +5234,7 @@ int SelectorMapMaskVDW(PyMOLGlobals * G, int sele1, ObjectMapState * oMap, float
   CSelector *I = G->Selector;
   MapType *map;
   float *v2;
-  int n1, n2;
+  int n1;
   int a, b, c, i, j, h, k, l;
   int at;
   int s;
@@ -5257,7 +5280,6 @@ int SelectorMapMaskVDW(PyMOLGlobals * G, int sele1, ObjectMapState * oMap, float
   /* now create and apply voxel map */
   c = 0;
   if(n1) {
-    n2 = 0;
     map = MapNewFlagged(G, -(buffer + MAX_VDW), I->Vertex, I->NAtom, NULL, I->Flag1);
     if(map) {
       MapSetupExpress(map);
@@ -6092,7 +6114,7 @@ int SelectorGetPDB(PyMOLGlobals * G, char **charVLA, int cLen, int sele, int sta
     SelectorUpdateTableSingleObject(G, single_object, state, false, NULL, 0, false);
   }
 
-  if(pdb_info->is_pqr_file)
+  if(pdb_info->is_pqr_file())
     use_ter = false;
   if(counter)
     c = *counter;
@@ -6173,7 +6195,7 @@ int SelectorGetPDB(PyMOLGlobals * G, char **charVLA, int cLen, int sele, int sta
       }
     }
   }
-  if(conectFlag && !(pdb_info->is_pqr_file)) {
+  if(conectFlag && !(pdb_info->is_pqr_file())) {
     BondType *bond = NULL;
     BondType *ii1;
     int nBond = 0;
@@ -7163,7 +7185,7 @@ int SelectorCreateObjectMolecule(PyMOLGlobals * G, int sele, const char *name,
     }
   }
 
-  atInfo = VLAlloc(AtomInfoType, nAtom);
+  atInfo = VLACalloc(AtomInfoType, nAtom);
   /* copy the atom info records and create new zero-based IDs */
   c = 0;
   {
@@ -7191,10 +7213,7 @@ int SelectorCreateObjectMolecule(PyMOLGlobals * G, int sele, const char *name,
      to the new merged molecule */
 
   ObjectMoleculeExtendIndices(targ, -1);
-  if (isNew)
-    ObjectMoleculeResetIDNumbers(targ);
-  else
-    ObjectMoleculeUpdateIDNumbers(targ);
+  ObjectMoleculeUpdateIDNumbers(targ);
   ObjectMoleculeUpdateNonbonded(targ);
 
   if(!isNew) {                  /* recreate selection table */
@@ -7350,21 +7369,20 @@ int SelectorSetName(PyMOLGlobals * G, const char *new_name, const char *old_name
  * RETURNS
  *   (int) index #, or -1 if not found
  */
-int SelectorIndexByName(PyMOLGlobals * G, const char *sname)
+int SelectorIndexByName(PyMOLGlobals * G, const char *sname, int ignore_case)
 {
-  OrthoLineType name;
   CSelector *I = G->Selector;
-  int ignore_case = SettingGetGlobal_b(G, cSetting_ignore_case);
   ov_diff i = -1;
 
   if(sname) {
-    const char *tname = sname;
-    while((tname[0] == '%') || (tname[0] == '?'))
-      tname++;
-    strcpy(name, tname);
-    i = SelectGetNameOffset(G, name, 1, ignore_case);
+    if (ignore_case < 0)
+      ignore_case = SettingGetGlobal_b(G, cSetting_ignore_case);
 
-    if((i >= 0) && (name[0] != '_')) {  /* don't do checking on internal selections */
+    while((sname[0] == '%') || (sname[0] == '?'))
+      sname++;
+    i = SelectGetNameOffset(G, sname, 1, ignore_case);
+
+    if((i >= 0) && (sname[0] != '_')) {  /* don't do checking on internal selections */
       const char *best;
       best = ExecutiveFindBestNameMatch(G, sname);      /* suppress spurious matches
                                                            of selections with non-selections */
@@ -7608,7 +7626,7 @@ ok_except1:
 int SelectorCheckTmp(PyMOLGlobals * G, const char *name)
 {
   if(WordMatch(G, cSelectorTmpPattern, name, false) + 1 ==
-     -(int) strlen(cSelectorTmpPrefix))
+     - cSelectorTmpPrefixLen)
     return true;
   else
     return false;
@@ -7619,7 +7637,7 @@ int SelectorCheckTmp(PyMOLGlobals * G, const char *name)
 void SelectorFreeTmp(PyMOLGlobals * G, const char *name)
 {                               /* remove temporary selections */
   if(name && name[0]) {
-    if(strncmp(name, cSelectorTmpPrefix, strlen(cSelectorTmpPrefix)) == 0) {
+    if(strncmp(name, cSelectorTmpPrefix, cSelectorTmpPrefixLen) == 0) {
       ExecutiveDelete(G, name);
     }
   }
@@ -8648,11 +8666,8 @@ static int SelectorSelect0(PyMOLGlobals * G, EvalElem * passed_base)
     {
       /* first, verify chemistry for all atoms... */
       ObjectMolecule *lastObj = NULL, *obj;
-      int at, s;
       for(a = cNDummyAtoms; a < I->NAtom; a++) {
-        at = i_table[a].atom;
         obj = i_obj[i_table[a].model];
-        s = obj->AtomInfo[at].selEntry;
         if(obj != lastObj) {
           ObjectMoleculeUpdateNeighbors(obj);
           ObjectMoleculeVerifyChemistry(obj, -1);
@@ -9018,6 +9033,7 @@ static int SelectorSelect1(PyMOLGlobals * G, EvalElem * base, int quiet)
     }
     break;
   case SELE_NAMs:
+    WARN_IF_LOWERCASE(G, "name", base[1].text);
     {
       CWordMatchOptions options;
       char *atom_name_wildcard = SettingGetGlobal_s(G, cSetting_atom_name_wildcard);
@@ -9084,8 +9100,6 @@ static int SelectorSelect1(PyMOLGlobals * G, EvalElem * base, int quiet)
       base_0_sele_a = &base[0].sele[cNDummyAtoms];
 
       if((matcher = WordMatcherNew(G, base[1].text, &options, true))) {
-        char null_st[1] = "";
-        char *st;
 	AtomInfoType * ai;
         int prevmodel;
         table_a = i_table + cNDummyAtoms;
@@ -9096,12 +9110,7 @@ static int SelectorSelect1(PyMOLGlobals * G, EvalElem * base, int quiet)
           ai = i_obj[table_a->model]->AtomInfo + table_a->atom;
 #ifndef NO_MMLIBS
 #endif
-          st = null_st;
-          if(ai->textType) {
-            if(!(st = OVLexicon_FetchCString(G->Lexicon, ai->textType)))
-              st = null_st;
-	  }
-          if((*base_0_sele_a = WordMatcherMatchAlpha(matcher, st)))
+          if((*base_0_sele_a = WordMatcherMatchAlpha(matcher, LexStr(G, ai->textType))))
 	    c++;
           table_a++;
           base_0_sele_a++;
@@ -9111,6 +9120,7 @@ static int SelectorSelect1(PyMOLGlobals * G, EvalElem * base, int quiet)
     }
     break;
   case SELE_ELEs:
+    WARN_IF_LOWERCASE(G, "element", base[1].text);
     {
       CWordMatchOptions options;
 
@@ -9253,6 +9263,7 @@ static int SelectorSelect1(PyMOLGlobals * G, EvalElem * base, int quiet)
     }
     break;
   case SELE_CHNs:
+    WARN_IF_LOWERCASE(G, "chain", base[1].text);
   case SELE_CUST:
     {
       CWordMatchOptions options;
@@ -9281,7 +9292,9 @@ static int SelectorSelect1(PyMOLGlobals * G, EvalElem * base, int quiet)
         for(a = cNDummyAtoms; a < I_NAtom; a++) {
           if((*base_0_sele_a =
               WordMatcherMatchAlpha(matcher, LexStr(G,
-                  *(int*)(((char*)(i_obj[table_a->model]->AtomInfo + table_a->atom)) + offset)))))
+                  *reinterpret_cast<int /* decltype(AtomInfoType::chain) */ *>
+                  (((char*)(i_obj[table_a->model]->AtomInfo + table_a->atom)) + offset)
+                  ))))
             c++;
           table_a++;
           base_0_sele_a++;
@@ -9291,6 +9304,7 @@ static int SelectorSelect1(PyMOLGlobals * G, EvalElem * base, int quiet)
     }
     break;
   case SELE_SSTs:
+    WARN_IF_LOWERCASE(G, "ss", base[1].text);
     {
       CWordMatchOptions options;
 
@@ -9349,6 +9363,7 @@ static int SelectorSelect1(PyMOLGlobals * G, EvalElem * base, int quiet)
     }
     break;
   case SELE_ALTs:
+    WARN_IF_LOWERCASE(G, "alt", base[1].text);
     {
       CWordMatchOptions options;
 
@@ -9433,6 +9448,7 @@ static int SelectorSelect1(PyMOLGlobals * G, EvalElem * base, int quiet)
     }
     break;
   case SELE_RSNs:
+    WARN_IF_LOWERCASE(G, "resn", base[1].text);
     {
       CWordMatchOptions options;
 
@@ -10304,7 +10320,6 @@ static int SelectorLogic1(PyMOLGlobals * G, EvalElem * inp_base, int state)
       int s;
       int c = 0;
       int a, at, a1, aa;
-      AtomInfoType *ai;
       ObjectMolecule *obj, *lastObj = NULL;
       int *stk;
       int stkDepth = 0;
@@ -10331,7 +10346,6 @@ static int SelectorLogic1(PyMOLGlobals * G, EvalElem * inp_base, int state)
             base[0].sele[a] = tag;
             c++;
             at = i_table[a].atom;       /* start walk from this location */
-            ai = obj->AtomInfo + at;
 
             s = obj->Neighbor[at];      /* add neighbors onto the stack */
             s++;                /* skip count */
@@ -10569,7 +10583,7 @@ static int SelectorLogic2(PyMOLGlobals * G, EvalElem * base)
             if(*base_2_sele_b) {
               at2 = &i_obj[table_b->model]->AtomInfo[table_b->atom];
               if(at1->resv == at2->resv)
-                if((tolower(at1->chain)) == (tolower(at2->chain)))
+                if(WordMatchNoWild(G, LexStr(G, at1->chain), LexStr(G, at2->chain), ignore_case) < 0)
                   if(WordMatchNoWild(G, at1->name, at2->name, ignore_case) < 0)
                     if(WordMatchNoWild(G, at1->resi, at2->resi, ignore_case) < 0)
                       if(WordMatchNoWild(G, at1->resn, at2->resn, ignore_case) < 0)
@@ -10798,6 +10812,28 @@ static void remove_quotes(char *st)
 
 }
 
+#define STACK_PUSH_VALUE(value) { \
+  depth++; \
+  VLACheck(Stack, EvalElem, depth); \
+  e = Stack + depth; \
+  e->level = (level << 4) + 1; \
+  e->imp_op_level = (imp_op_level << 4) + 1; \
+  imp_op_level = level; \
+  e->type = STYP_VALU; \
+  strcpy(e->text, value); \
+  remove_quotes(e->text); \
+}
+
+#define STACK_PUSH_OPERATION(ocode) { \
+  depth++; \
+  VLACheck(Stack, EvalElem, depth); \
+  e = Stack + depth; \
+  e->code = ocode; \
+  e->level = (level << 4) + ((e->code & 0xF0) >> 4); \
+  e->imp_op_level = (imp_op_level << 4) + 1; \
+  imp_op_level = level; \
+  e->type = (e->code & 0xF); \
+}
 
 /*========================================================================*/
 int *SelectorEvaluate(PyMOLGlobals * G, SelectorWordType * word, int state, int quiet)
@@ -10809,11 +10845,10 @@ int *SelectorEvaluate(PyMOLGlobals * G, SelectorWordType * word, int state, int 
   unsigned int code = 0;
   int valueFlag = 0;            /* are we expecting? */
   int *result = NULL;
-  int opFlag, opFlag2, maxLevel;
-  char *q, *cc1, *cc2;
+  int opFlag, maxLevel;
+  char *q;
   int totDepth = 0;
   int exact = 0;
-  char *np;
 
   int ignore_case = SettingGetGlobal_b(G, cSetting_ignore_case);
   /* CFGs can efficiently be parsed by stacks; use a clean stack w/space
@@ -10861,17 +10896,7 @@ int *SelectorEvaluate(PyMOLGlobals * G, SelectorWordType * word, int state, int 
       break;
     default:
       if(valueFlag > 0) {       /* standard operand */
-        depth++;
-        VLACheck(Stack, EvalElem, depth);
-        e = Stack + depth;
-        e->level = (level << 4) + 1;    /* each nested paren is 16 levels of priority */
-        e->imp_op_level = (imp_op_level << 4) + 1;
-        imp_op_level = level;
-        e->type = STYP_VALU;
-        cc1 = word[c];
-        cc2 = e->text;
-        strcpy(e->text, cc1);
-        remove_quotes(e->text);
+        STACK_PUSH_VALUE(word[c]);
         valueFlag--;
       } else if(valueFlag < 0) {        /* operation parameter i.e. around X<-- */
         depth++;
@@ -10903,14 +10928,7 @@ int *SelectorEvaluate(PyMOLGlobals * G, SelectorWordType * word, int state, int 
             code = 0;           /* favor selections over partial keyword matches */
         if(code) {
           /* this is a known operation */
-          depth++;
-          VLACheck(Stack, EvalElem, depth);
-          e = Stack + depth;
-          e->code = code;
-          e->level = (level << 4) + ((e->code & 0xF0) >> 4);
-          e->imp_op_level = (imp_op_level << 4) + 1;
-          imp_op_level = level;
-          e->type = (e->code & 0xF);
+          STACK_PUSH_OPERATION(code);
           switch (e->type) {
           case STYP_SEL0:
             valueFlag = 0;
@@ -10938,28 +10956,86 @@ int *SelectorEvaluate(PyMOLGlobals * G, SelectorWordType * word, int state, int 
             break;
           }
         } else {
-          strcpy(tmpKW, word[c]);       /* handle <object-name>[`index] syntax */
-          if((np = strstr(tmpKW, "`"))) {       /* must be an object name */
-            *np = 0;
-            depth++;
-            VLACheck(Stack, EvalElem, depth);
-            e = Stack + depth;
-            e->code = SELE_MODs;
-            e->level = (level << 4) + ((e->code & 0xF0) >> 4);
-            e->imp_op_level = (imp_op_level << 4) + 1;
-            imp_op_level = level;
-            e->type = STYP_SEL1;
+          strcpy(tmpKW, word[c]);
+
+          if((a = strchrcount(tmpKW, '/'))) { /* handle slash notation */
+            if(a > 5) {
+              ok = ErrMessage(G, "Selector", "too many slashes in macro");
+              break;
+            }
+
+            // macro codes (some special cases apply! see code below)
+            const int macrocodes[] = {SELE_MODs, SELE_SEGs, SELE_CHNs, SELE_RSNs, SELE_NAMs};
+
+            // two code/value pairs to support resn`resi and name`alt
+            int codes[] = {0, 0, 0}; // null-terminated
+            char * values[2];
+
+            q = tmpKW;
+
+            // if macro starts with "/" then read from left, otherwise
+            // read from right
+            if(*q == '/') {
+              a = 4;
+              q++;
+            }
+
+            // loop over macro elements
+            for(b = 0; q && *q; a--) {
+              values[0] = q;
+
+              // null-terminate current element
+              if((q = strchr(q, '/')))
+                *(q++) = '\0';
+
+              // skip empty elements
+              if(!*values[0])
+                continue;
+
+              codes[0] = macrocodes[4 - a];
+              codes[1] = 0;
+
+              // resn`resi or name`alt
+              if (codes[0] == SELE_RSNs || codes[0] == SELE_NAMs) {
+                char * backtick = strchr(values[0], '`');
+                if (backtick) {
+                  if (codes[0] == SELE_RSNs) {
+                    codes[1] = SELE_RSIs;
+                  } else {
+                    codes[1] = SELE_ALTs;
+                  }
+                  values[1] = backtick + 1;
+                  *backtick = '\0';
+                } else if (codes[0] == SELE_RSNs
+                    && values[0][0] >= '0'
+                    && values[0][0] <= '9') {
+                  // numeric -> resi
+                  codes[0] = SELE_RSIs;
+                }
+              }
+
+              for (int i = 0; codes[i]; ++i) {
+                // skip empty and "*" values
+                if (*values[i] && strcmp(values[i], "*")) {
+                  if(b++)
+                    STACK_PUSH_OPERATION(SELE_AND2);
+
+                  STACK_PUSH_OPERATION(codes[i]);
+                  STACK_PUSH_VALUE(values[i]);
+                }
+              }
+            }
+
+            // all-empty slash macro equals "all"
+            if(!b)
+              STACK_PUSH_OPERATION(SELE_ALLz);
+
+          } else if(strstr(tmpKW, "`")) { /* handle <object`index> syntax */
+            STACK_PUSH_OPERATION(SELE_MODs);
             valueFlag = 1;
             c--;
           } else {              /* handle <selection-name> syntax */
-            depth++;
-            VLACheck(Stack, EvalElem, depth);
-            e = Stack + depth;
-            e->code = SELE_SELs;
-            e->level = (level << 4) + ((e->code & 0xF0) >> 4);
-            e->imp_op_level = (imp_op_level << 4) + 1;
-            imp_op_level = level;
-            e->type = STYP_SEL1;
+            STACK_PUSH_OPERATION(SELE_SELs);
             valueFlag = 1;
             c--;
           }
@@ -11140,7 +11216,6 @@ int *SelectorEvaluate(PyMOLGlobals * G, SelectorWordType * word, int state, int 
 
               }
           if(opFlag) {
-            opFlag2 = true;     /* make note that we performed an operation */
             depth = 1;          /* start back at the left hand side */
           } else {
             depth = depth + 1;

@@ -119,7 +119,7 @@ NOTES
 
 SEE ALSO
 
-    ungroup, order
+    ungroup, order, "group_auto_mode" setting
     
 '''
         
@@ -444,7 +444,7 @@ PYMOL API
 
 SEE ALSO
 
-    load, color, create, slice, gradient
+    ramp_update, load, color, create, slice, gradient
     
     '''
         r = DEFAULT_ERROR
@@ -479,10 +479,33 @@ SEE ALSO
             r = _cmd.ramp_new(_self._COb,str(name),str(map_name),range,new_color,
                                     int(state)-1,str(selection),float(beyond),float(within),
                                     float(sigma),int(zero),int(quiet))
+            _self._invalidate_color_sc(_self)
         finally:
             _self.unlock(r,_self)
         if _self._raising(r,_self): raise pymol.CmdException         
         return r
+
+    def ramp_update(name, range=[], color=[], quiet=1, _self=cmd):
+        '''
+DESCRIPTION
+
+    "ramp_update" updates range and/or color of a color ramp.
+
+USAGE
+
+    ramp_update name [, range [, color ]]
+
+EXAMPLES
+
+    ramp_new    e_pot_color, e_pot_map, [-10,0,10], [red,white,blue]
+    ramp_update e_pot_color, range=[-15,0,15]
+    ramp_update e_pot_color, color=[green,white,orange]
+
+SEE ALSO
+
+    ramp_new
+        '''
+        return ramp_new(name, '', range, color, quiet=quiet, _self=cmd)
 
     def isomesh(name, map, level=1.0, selection='', buffer=0.0,
                 state=1, carve=None, source_state=0, quiet=1, _self=cmd):
@@ -751,7 +774,8 @@ DESCRIPTION
 
 USAGE
 
-    isodot name = map, level [,(selection) [,buffer [, state ] ] ] 
+    isodot name, map [, level [, selection [, buffer [, state
+        [, carve [, source_state [, quiet ]]]]]]]
 
 ARGUMENTS
 
@@ -828,7 +852,8 @@ DESCRIPTION
 
 USAGE
 
-    gradient name = map, [ minimum, [, maximum [, selection [, buffer [, state ]]]]]
+    gradient name, map [, minimum [, maximum [, selection [, buffer [, state
+        [, carve [, source_state [, quiet ]]]]]]]]
 
 ARGUMENTS
 
@@ -876,15 +901,11 @@ DESCRIPTION
 
 USAGE
 
-    copy target, source
+    copy target, source [, zoom ]
 
 NOTES
 
     Currently, this command only works for molecular objects.
-
-PYMOL API
-
-    cmd.copy(string target, string source)
 
 SEE ALSO
 

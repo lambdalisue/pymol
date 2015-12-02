@@ -150,7 +150,7 @@ USAGE
 
 EXAMPLES
 
-    chain chain B
+    center chain B
     center 145/
 
 ARGUMENTS
@@ -553,7 +553,7 @@ EXAMPLES
 
     show
     show ribbon
-    show lines, (name ca or name c or name n)
+    show lines, (name CA+C+N)
 
 SEE ALSO
 
@@ -599,12 +599,6 @@ DESCRIPTION
 
     "as" turns on and off atom and bond representations.
 
-    The available representations are:
-
-        lines     spheres    mesh      ribbon     cartoon
-        sticks    dots       surface   labels     extent
-        nonbonded nb_spheres slice
-
 USAGE
 
     as representation [, selection ]
@@ -614,13 +608,13 @@ ARGUMENTS
     representation = lines, spheres, mesh, ribbon, cartoon, sticks,
         dots, surface, labels, extent, nonbonded, nb_spheres, slice,
         extent, slice, dashes, angles, dihedrals, cgo, cell, callback,
-        or everything
+        volume or everything
 
     selection = string {default: all}
 
 EXAMPLES
 
-    as lines, name ca or name c or name n
+    as lines, name CA+C+N
 
     as ribbon
 
@@ -849,7 +843,7 @@ SEE ALSO
         return r
 
     def set_view(view,animate=0,quiet=1,hand=1,_self=cmd):
-        '''
+        r'''
 DESCRIPTION
 
     "set_view" sets viewing information for the current scene,
@@ -1337,9 +1331,10 @@ SEE ALSO
         if rep:
             # only atomic representations
             _self.hide('everything', '(*)')
+            sele_prefix = _self.get_legal_name('_scene_' + key + '_')
             for rep_name in rep_list:
-                _self.show(rep_name, "?_scene_" + key + "_" + rep_name)
-            _self.delete("_scene_" + key + "_*")
+                _self.show(rep_name, "?" + sele_prefix + rep_name)
+            _self.delete(sele_prefix + "*")
 
         _self.scene(key, 'store', scene_list[5], view, color, active, rep, frame)
 
@@ -1506,7 +1501,7 @@ ARGUMENTS
 EXAMPLES
 
     label chain A, chain
-    label name ca,"%s-%s" % (resn,resi)
+    label name CA,"%s-%s" % (resn,resi)
     label resi 200,"%1.3f" % partial_charge
 
 NOTES

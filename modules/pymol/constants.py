@@ -11,6 +11,7 @@ gz_ext_re = re.compile(r"(\.?gz|\.bz2)$", re.I)
 
 file_ext_re = re.compile(string.join([
     "\.pdb$|\.pdb1$|\.ent$|\.mol$|\.p5m$|",
+    r"\.pdbml$|\.pdbqt$|\.cml$|",
     r"\.mmod$|\.mmd$|\.dat$|\.out$|\.mol2$|",
     r"\.xplor$|\.pkl$|\.sdf$|\.pqr|", 
     r"\.r3d$|\.xyz$|\.xyz_[0-9]*$|", 
@@ -105,6 +106,9 @@ class loadable:
     spider = 62   # spider map
     cms = 63
     plugin = 64
+    mae = 65
+    maestr = 66
+    pdbqt = 67
 
 _load2str = { loadable.pdb : loadable.pdbstr,
               loadable.cif : loadable.cifstr,
@@ -115,7 +119,7 @@ _load2str = { loadable.pdb : loadable.pdbstr,
               loadable.ccp4 : loadable.ccp4str,
               loadable.sdf2 : loadable.sdf2str}
 
-safe_oname_re = re.compile(r"\ |\(|\)|\||\&|\!|\,")  # quash reserved characters
+safe_oname_re = re.compile(r"[ ()|&!,`]")  # TODO use get_legal_name
 sanitize_list_re = re.compile(r"[^0-9\.\-\[\]\,]+")
 sanitize_alpha_list_re = re.compile(r"[^a-zA-Z0-9_\'\"\.\-\[\]\,]+")
 nt_hidden_path_re = re.compile(r"\$[\/\\]")

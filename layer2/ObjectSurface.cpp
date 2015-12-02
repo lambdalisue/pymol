@@ -276,13 +276,20 @@ void ObjectSurfaceDump(ObjectSurface * I, const char *fname, int state)
           v += 12;
           c = *(n++);
           c -= 4;
+          bool backface = true;
+          const float *v1, *v2;
           while(c > 0) {
+            if ((backface = !backface)) {
+              v1 = v - 6;
+              v2 = v - 12;
+            } else {
+              v1 = v - 12;
+              v2 = v - 6;
+            }
             fprintf(f,
                     "%10.4f%10.4f%10.4f%10.4f%10.4f%10.4f\n%10.4f%10.4f%10.4f%10.4f%10.4f%10.4f\n%10.4f%10.4f%10.4f%10.4f%10.4f%10.4f\n",
-                    *(v - 9), *(v - 8), *(v - 7),
-                    *(v - 12), *(v - 11), *(v - 10),
-                    *(v - 3), *(v - 2), *(v - 1),
-                    *(v - 6), *(v - 5), *(v - 4),
+                    *(v1 + 3), *(v1 + 4), *(v1 + 5), *(v1), *(v1 + 1), *(v1 + 2),
+                    *(v2 + 3), *(v2 + 4), *(v2 + 5), *(v2), *(v2 + 1), *(v2 + 2),
                     *(v + 3), *(v + 4), *(v + 5), *(v), *(v + 1), *(v + 2));
 
             v += 6;
@@ -703,22 +710,10 @@ static void ObjectSurfaceRender(ObjectSurface * I, RenderInfo * info)
   if(fabs(alpha - 1.0) < R_SMALL4)
     alpha = 1.0F;
 
-  if(state >= 0)
-    if(state < I->NState)
-      if(I->State[state].Active)
-        if(I->State[state].V && I->State[state].N)
-          ms = I->State + state;
-  while(1) {
-    if(state < 0) {             /* all_states */
-      ms = I->State + a;
-    } else {
-      if(!ms) {
-        if(I->NState && ((SettingGetGlobal_b(G, cSetting_static_singletons) && (I->NState == 1))))
-          ms = I->State;
-      }
-    }
-    if(ms) {
-      if(ms->Active && ms->V && ms->N) {
+  StateIterator iter(G, I->Obj.Setting, state, I->NState);
+  while(iter.next()) {
+    ms = I->State + iter.state;
+    if(ms && ms->Active && ms->V && ms->N) {
         v = ms->V;
         n = ms->N;
         if(ray) {
@@ -854,7 +849,7 @@ static void ObjectSurfaceRender(ObjectSurface * I, RenderInfo * info)
 		  CGORenderGL(ms->shaderCGO, NULL, NULL, NULL, info, NULL);
 		  if (shaderPrg)
 		    CShaderPrg_Disable(shaderPrg);
-		  return;
+		  continue;
 		}
 	      }
 
@@ -1266,13 +1261,7 @@ static void ObjectSurfaceRender(ObjectSurface * I, RenderInfo * info)
 	    }
 	  }
 	}
-      }
     }
-    if(state >= 0)
-      break;                    /* only rendering one state */
-    a = a + 1;
-    if(a >= I->NState)
-      break;
   }
 }
 
@@ -1507,7 +1496,7 @@ void ObjectSurfaceRecomputeExtent(ObjectSurface * I)
   I->Obj.ExtentFlag = extent_flag;
 
   if(I->Obj.TTTFlag && I->Obj.ExtentFlag) {
-    float *ttt;
+    const float *ttt;
     double tttd[16];
     if(ObjectGetTTT(&I->Obj, &ttt, -1)) {
       convertTTTfR44d(ttt, tttd);

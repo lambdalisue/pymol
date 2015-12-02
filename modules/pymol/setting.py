@@ -422,9 +422,6 @@ SEE ALSO
             name = name_dict.get(index, name)
             _self.log('', "cmd.unset('%s',%s,%s)\n" % (name, repr(selection), state))
         if True:
-            if not len(selection):
-                r = set(name,0,'',state,updates,log=0,quiet=quiet,_self=_self)
-            else:
                 try:
                     _self.lock(_self)
                     try:
@@ -439,7 +436,6 @@ SEE ALSO
                         print "Error: unable to unset setting value."
                 finally:
                     _self.unlock(r,_self)
-        if _self._raising(r,_self): raise QuietException            
         return r
     
     def unset_bond(name,selection1,selection2=None,state=0,updates=1,log=0,quiet=1,_self=cmd):
@@ -530,7 +526,8 @@ ARGUMENTS
 NOTES
 
     "get" currently only works with global, per-object, and per-state
-    settings.  There is currently no way to retrieve per-atom settings.
+    settings.  Atom level settings get be queried with "iterate" (e.g.
+    iterate all, print s.line_width)
     
 PYMOL API
 

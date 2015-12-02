@@ -32,7 +32,7 @@ the initialization functions for these libraries on startup.
 
 /* BEGIN PROPRIETARY CODE SEGMENT (see disclaimer in "os_proprietary.h") */
 #ifdef WIN32
-#include<windows.h>
+#include"os_proprietary.h"
 #include<process.h>
 #endif
 
@@ -435,10 +435,17 @@ int PyObject_GenericSetAttrAsItem(PyObject *o, PyObject *key, PyObject *value) {
 }
 
 PyObject * WrapperObjectSubScript(PyObject *obj, PyObject *key){
+
+  static PyObject * pystr_HETATM        = PyString_InternFromString("HETATM");
+  static PyObject * pystr_ATOM          = PyString_InternFromString("ATOM");
+  static PyObject * pystr_QuestionMark  = PyString_InternFromString("?");
+
   WrapperObject *wobj = (WrapperObject*)obj;
   char *aprop;
   AtomPropertyInfo *ap;
   PyObject *ret = NULL;
+  bool borrowed = false;
+
   if (!wobj || !wobj->obj){
     /* ERROR */
     PRINTFB(wobj->G, FB_Python, FB_Errors)
@@ -471,8 +478,9 @@ PyObject * WrapperObjectSubScript(PyObject *obj, PyObject *key){
       break;
     case cPType_int_as_string:
       {
-	int val = *(int*)(((char*)wobj->atomInfo) + ap->offset);
-	const char *st = LexStr(wobj->G, val);
+        const char *st = LexStr(wobj->G,
+            *reinterpret_cast<int*>
+            (((char*)wobj->atomInfo) + ap->offset));
 	ret = PyString_FromString(st);
       }
       break;
@@ -493,13 +501,8 @@ PyObject * WrapperObjectSubScript(PyObject *obj, PyObject *key){
       break;
     case cPType_char_as_type:
       {
-	char val = *(char*)(((char*)wobj->atomInfo) + ap->offset);
-	char atype[7];
-	if(val)
-	  strcpy(atype, "HETATM");
-	else
-	  strcpy(atype, "ATOM");
-	ret = PyString_FromString(atype);
+	ret = wobj->atomInfo->hetatm ? pystr_HETATM : pystr_ATOM;
+	borrowed = true;
       }
       break;
     case cPType_model:
@@ -520,7 +523,8 @@ PyObject * WrapperObjectSubScript(PyObject *obj, PyObject *key){
 	if(val != cAtomInfoNoType){
 	  ret = PyInt_FromLong((long)val);
 	} else {
-	  ret = PyString_FromString("?");
+	  ret = pystr_QuestionMark;
+	  borrowed = true;
 	}
       }
       break;
@@ -552,8 +556,11 @@ PyObject * WrapperObjectSubScript(PyObject *obj, PyObject *key){
   } else {
     /* if not an atom property, check if local variable in dict */
     ret = PyDict_GetItem(wobj->dict, key);
+    borrowed = true;
   }
-  PXIncRef(ret);
+
+  if (borrowed)
+    PXIncRef(ret);
   return ret;
 }
 
@@ -634,7 +641,8 @@ int WrapperObjectAssignSubScript(PyObject *obj, PyObject *key, PyObject *val){
 	break;
       case cPType_int_as_string:
 	{
-	  int *dest = (int*)(((char*)wobj->atomInfo) + ap->offset);
+          auto dest = reinterpret_cast<int*>
+            (((char*)wobj->atomInfo) + ap->offset);
           PyObject *valobj = PyObject_Str(val);
 	  char *valstr = PyString_AS_STRING(valobj);
 	  LexDec(wobj->G, *dest);
@@ -663,10 +671,9 @@ int WrapperObjectAssignSubScript(PyObject *obj, PyObject *key, PyObject *val){
 	break;
       case cPType_char_as_type:
 	{
-	  signed char *dest = (signed char *)(((char*)wobj->atomInfo) + ap->offset);
           PyObject *valobj = PyObject_Str(val);
           char *valstr = PyString_AS_STRING(valobj);
-	  *dest = ((valstr[0] == 'h') || (valstr[0] == 'H'));
+          wobj->atomInfo->hetatm = ((valstr[0] == 'h') || (valstr[0] == 'H'));
           Py_DECREF(valobj);
 	  changed = true;
 	}
@@ -1182,9 +1189,7 @@ int PLabelAtom(PyMOLGlobals * G, ObjectMolecule *obj, CoordSet *cs, AtomInfoType
 
   if (!expr_co){
     // unsetting label
-    if(at->label) {
-      OVLexicon_DecRef(G->Lexicon, at->label);
-    }
+    LexDec(G, at->label);
     at->label = 0;
     return true;
   }

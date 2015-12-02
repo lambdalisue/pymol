@@ -19,7 +19,14 @@ Z* -------------------------------------------------------------------
 #include"os_std.h"
 #include"os_gl.h"
 
+#include <algorithm>
 #include <set>
+
+#ifdef _PYMOL_NO_CXX11
+#define STD_MOVE(x) (x)
+#else
+#define STD_MOVE(x) std::move(x)
+#endif
 
 #include"Base.h"
 #include"Debug.h"
@@ -218,7 +225,6 @@ int ObjectMoleculeSetDiscrete(PyMOLGlobals * G, ObjectMolecule * I, int discrete
   mfree(bondseen);
 
   // update N* count fields
-  I->NDiscrete = natom;
   I->NAtom = natom;
   I->NBond = nbond;
   for (state = 0; state < I->NCSet; state++)
@@ -230,8 +236,8 @@ int ObjectMoleculeSetDiscrete(PyMOLGlobals * G, ObjectMolecule * I, int discrete
     VLASize(I->Bond, BondType, I->NBond);
   if (I->NAtom)
     VLASize(I->AtomInfo, AtomInfoType, I->NAtom);
-  VLASize(I->DiscreteAtmToIdx, int, I->NDiscrete);
-  VLASize(I->DiscreteCSet, CoordSet*, I->NDiscrete);
+
+  I->setNDiscrete(I->NAtom);
 
   ObjectMoleculeInvalidate(I, cRepAll, cRepInvAll, -1);
 
@@ -2063,10 +2069,7 @@ static CoordSet *ObjectMoleculeTOPStr2CoordSet(PyMOLGlobals * G, const char *buf
       if(sscanf(cc, "%s", temp) != 1)
         ok = false;
       else {
-        OVreturn_word ret = OVLexicon_GetFromCString(G->Lexicon, temp);
-        if(OVreturn_IS_OK(ret)) {
-          ai->textType = ret.word;
-        }
+        ai->textType = LexIdx(G, temp);
       }
       if((++b) == 20) {
         b = 0;
@@ -2393,7 +2396,7 @@ static ObjectMolecule *ObjectMoleculeReadTOPStr(PyMOLGlobals * G, ObjectMolecule
       I->Symmetry = SymmetryCopy(cset->Symmetry);
       CHECKOK(ok, I->Symmetry);
       if (ok)
-	SymmetryAttemptGeneration(I->Symmetry, false);
+        SymmetryUpdate(I->Symmetry);
     }
 
     if(I->CSTmpl)
@@ -2470,6 +2473,14 @@ float ObjectMoleculeSculptIterate(ObjectMolecule * I, int state, int n_cycle,
     return 0.0F;
 }
 
+/*
+ * - Assigns new id to all atoms with AtomInfoType.id == -1
+ * - Assigns new id to all bonds with BondType.id == -1
+ * - Assigns ObjectMolecule.AtomCounter if -1
+ * - Assigns ObjectMolecule.BondCounter if -1
+ *
+ * Cost: O(NAtom + NBond)
+ */
 void ObjectMoleculeUpdateIDNumbers(ObjectMolecule * I)
 {
   int a;
@@ -2508,27 +2519,6 @@ void ObjectMoleculeUpdateIDNumbers(ObjectMolecule * I)
   for(a = 0; a < I->NBond; a++) {
     if(!b->id)
       b->id = I->BondCounter++;
-    b++;
-  }
-}
-
-void ObjectMoleculeResetIDNumbers(ObjectMolecule * I)
-{
-  int a;
-  AtomInfoType *ai;
-  BondType *b;
-
-  I->AtomCounter = 0;
-  ai = I->AtomInfo;
-  for(a = 0; a < I->NAtom; a++) {
-    ai->id = I->AtomCounter++;
-    ai++;
-  }
-
-  I->BondCounter = 0;
-  b = I->Bond;
-  for(a = 0; a < I->NBond; a++) {
-    b->id = I->BondCounter++;
     b++;
   }
 }
@@ -2771,7 +2761,7 @@ ObjectMolecule *ObjectMoleculeReadPMO(PyMOLGlobals * G, ObjectMolecule * I, CRaw
         I->Symmetry = SymmetryCopy(cset->Symmetry);
 	CHECKOK(ok, I->Symmetry);
         if (ok)
-	  SymmetryAttemptGeneration(I->Symmetry, false);
+          SymmetryUpdate(I->Symmetry);
       }
       SceneCountFrames(G);
       if (ok)
@@ -3243,15 +3233,16 @@ void ObjectMoleculeRenderSele(ObjectMolecule * I, int curState, int sele, int vi
   int all_vis = !vis_only;
   int visRep;
   float tmp_matrix[16], v_tmp[3], *matrix = NULL;
-  int objState;
-  int frozen = SettingGetIfDefined_i(I->Obj.G, I->Obj.Setting, cSetting_state, &objState);
   int use_matrices =
     SettingGet_i(I->Obj.G, I->Obj.Setting, NULL, cSetting_matrix_mode);
 
   if(use_matrices<0) use_matrices = 0;
 
-  if(frozen)
-    curState = objState - 1;
+  if (SettingGetIfDefined_i(G, I->Obj.Setting, cSetting_all_states, &a)) {
+    curState = a ? -1 : SettingGet_i(G, I->Obj.Setting, NULL, cSetting_state);
+  } else if (SettingGetIfDefined_i(G, I->Obj.Setting, cSetting_state, &a)) {
+    curState = a - 1;
+  }
 
   if(G->HaveGUI && G->ValidContext) {
     AtomInfoType *atInfo = I->AtomInfo, *ai;
@@ -3651,7 +3642,7 @@ static ObjectMolecule *ObjectMoleculeReadXYZStr(PyMOLGlobals * G, ObjectMolecule
       ok &= ObjectMoleculeConnect(I, &I->NBond, &I->Bond, I->AtomInfo, cset, !have_bonds, -1);
     if(cset->Symmetry && (!I->Symmetry)) {
       I->Symmetry = SymmetryCopy(cset->Symmetry);
-      SymmetryAttemptGeneration(I->Symmetry, false);
+      SymmetryUpdate(I->Symmetry);
     }
 
     SceneCountFrames(G);
@@ -3835,7 +3826,9 @@ int ObjectMoleculeAddSeleHydrogens(ObjectMolecule * I, int sele, int state)
 		cs->TmpLinkBond[a].order = 1;
 		cs->TmpLinkBond[a].stereo = 0;
 		cs->TmpLinkBond[a].id = -1;
+#ifdef _PYMOL_IP_EXTRAS
 		cs->TmpLinkBond[a].oldid = -1;
+#endif
 	      }
 	      cs->NTmpLinkBond = nH;
 	    }
@@ -4925,7 +4918,15 @@ int ObjectMoleculePrepareAtom(ObjectMolecule * I, int index, AtomInfoType * ai)
     strcpy(ai->resi, ai0->resi);
     strcpy(ai->segi, ai0->segi);
     strcpy(ai->resn, ai0->resn);
-    AtomInfoAssignColors(I->Obj.G, ai);
+    ai->visRep = ai0->visRep;
+    ai->id = -1;
+#ifdef _PYMOL_IP_EXTRAS
+    ai->oldid = -1;
+#endif
+    ai->rank = -1;
+    AtomInfoUniquefyNames(I->Obj.G, I->AtomInfo, I->NAtom, ai, NULL, 1);
+    AtomInfoAssignParameters(I->Obj.G, ai);
+
     if((ai->elem[0] == ai0->elem[0]) && (ai->elem[1] == ai0->elem[1]))
       ai->color = ai0->color;
     else if((ai->elem[0] == 'C') && (ai->elem[1] == 0)) {
@@ -4947,14 +4948,8 @@ int ObjectMoleculePrepareAtom(ObjectMolecule * I, int index, AtomInfoType * ai)
         /* if no carbon nearby, then color according to the object color */
         ai->color = I->Obj.Color;
       }
-    }
-    if (ok){
-      ai->visRep = ai0->visRep;
-      ai->id = -1;
-      ai->oldid = -1;
-      ai->rank = -1;
-      AtomInfoUniquefyNames(I->Obj.G, I->AtomInfo, I->NAtom, ai, NULL, 1);
-      AtomInfoAssignParameters(I->Obj.G, ai);
+    } else {
+      AtomInfoAssignColors(I->Obj.G, ai);
     }
   }
   return ok;
@@ -5365,15 +5360,7 @@ void ObjectMoleculePurge(ObjectMolecule * I)
     VLASize(I->AtomInfo, AtomInfoType, I->NAtom);
     if (I->DiscreteFlag){
       ObjectMoleculeAdjustDiscreteAtmIdx(I, oldToNew, I->NAtom-offset); /* need to include previous atoms */
-      VLASize(I->DiscreteAtmToIdx, int, I->NAtom);
-      VLASize(I->DiscreteCSet, CoordSet *, I->NAtom);
-      if (I->NDiscrete < I->NAtom){
-	for(a = I->NDiscrete; a < I->NAtom; a++) {
-	  I->DiscreteAtmToIdx[a] = -1;
-	  I->DiscreteCSet[a] = NULL;
-	}
-      }
-      I->NDiscrete = I->NAtom;
+      I->setNDiscrete(I->NAtom);
     }
     for(a = 0; a < I->NCSet; a++)
       if(I->CSet[a])
@@ -7278,6 +7265,11 @@ int ObjectMoleculeGetAtomIndex(ObjectMolecule * I, int sele)
 
 
 /*========================================================================*/
+/*
+ * Update all AtomInfoType.bonded
+ *
+ * Cost: O(NAtom + NBond)
+ */
 void ObjectMoleculeUpdateNonbonded(ObjectMolecule * I)
 {
   int a;
@@ -7539,12 +7531,8 @@ static CoordSet *ObjectMoleculeChemPyModel2CoordSet(PyMOLGlobals * G,
           tmp = PyObject_GetAttrString(atom, "text_type");
           if(tmp) {
             OrthoLineType temp;
-            OVreturn_word ret;
             ok = PConvPyObjectToStrMaxClean(tmp, temp, sizeof(OrthoLineType) - 1);
-            ret = OVLexicon_GetFromCString(G->Lexicon, temp);
-            if(OVreturn_IS_OK(ret)) {
-              ai->textType = ret.word;
-            }
+            ai->textType = LexIdx(G, temp);
           }
           if(!ok)
             ErrMessage(G, "ObjectMoleculeChemPyModel2CoordSet", "can't read text_type");
@@ -7558,12 +7546,8 @@ static CoordSet *ObjectMoleculeChemPyModel2CoordSet(PyMOLGlobals * G,
           tmp = PyObject_GetAttrString(atom, "custom");
           if(tmp) {
             OrthoLineType temp;
-            OVreturn_word ret;
             ok = PConvPyObjectToStrMaxClean(tmp, temp, sizeof(OrthoLineType) - 1);
-            ret = OVLexicon_GetFromCString(G->Lexicon, temp);
-            if(OVreturn_IS_OK(ret)) {
-              ai->custom = ret.word;
-            }
+            ai->custom = LexIdx(G, temp);
           }
           if(!ok)
             ErrMessage(G, "ObjectMoleculeChemPyModel2CoordSet", "can't read custom");
@@ -7600,8 +7584,11 @@ static CoordSet *ObjectMoleculeChemPyModel2CoordSet(PyMOLGlobals * G,
       if(ok) {
         if(PTruthCallStr(atom, "has", "stereo")) {
           tmp = PyObject_GetAttrString(atom, "stereo");
-          if(tmp)
-            ok = PConvPyObjectToChar(tmp, (char *) &ai->stereo);
+          if(tmp) {
+            char tmp_char;
+            ok = PConvPyObjectToChar(tmp, &tmp_char);
+            ai->stereo = tmp_char;
+          }
           if(!ok)
             ErrMessage(G, "ObjectMoleculeChemPyModel2CoordSet", "can't read stereo");
           Py_XDECREF(tmp);
@@ -7747,12 +7734,9 @@ static CoordSet *ObjectMoleculeChemPyModel2CoordSet(PyMOLGlobals * G,
         if(tmp) {
           float u[6];
           if(PConvPyListToFloatArrayInPlace(tmp, u, 6)) {
-            ai->U11 = u[0];
-            ai->U22 = u[1];
-            ai->U33 = u[2];
-            ai->U12 = u[3];
-            ai->U13 = u[4];
-            ai->U23 = u[5];
+            // only allocate if not all zero
+            if(u[0] || u[1] || u[2] || u[3] || u[4] || u[5])
+	      memcpy(ai->get_anisou(), u, 6 * sizeof(float));
           }
           Py_DECREF(tmp);
         }
@@ -7826,11 +7810,8 @@ static CoordSet *ObjectMoleculeChemPyModel2CoordSet(PyMOLGlobals * G,
       if(ok && PyObject_HasAttrString(atom, "label")) {
         tmp = PyObject_GetAttrString(atom, "label");
         if(tmp) {
-          if(ai->label) {
-            OVLexicon_DecRef(G->Lexicon, ai->label);
-          }
-          if(!PConvPyStrToLexRef(tmp, G->Lexicon, &ai->label))
-            ai->label = 0;
+          if (PyString_Check(tmp))
+            ai->label = LexIdx(G, PyString_AsString(tmp));
         }
         Py_XDECREF(tmp);
       }
@@ -8007,12 +7988,14 @@ static CoordSet *ObjectMoleculeChemPyModel2CoordSet(PyMOLGlobals * G,
           }
         }
         if(ok) {
+          int order = 0;
           tmp = PyObject_GetAttrString(bnd, "order");
           if(tmp)
-            ok = PConvPyObjectToInt(tmp, &ii->order);
+            ok = PConvPyObjectToInt(tmp, &order);
           if(!ok)
             ErrMessage(G, "ObjectMoleculeChemPyModel2CoordSet", "can't read bond order");
           Py_XDECREF(tmp);
+          ii->order = order;
         }
 
         if(ok && PyObject_HasAttrString(bnd, "stick_radius")) {
@@ -8257,7 +8240,7 @@ ObjectMolecule *ObjectMoleculeLoadChemPyModel(PyMOLGlobals * G,
       ok &= ObjectMoleculeConnect(I, &I->NBond, &I->Bond, I->AtomInfo, cset, auto_bond, connect_mode);
     if(cset->Symmetry && (!I->Symmetry)) {
       I->Symmetry = SymmetryCopy(cset->Symmetry);
-      SymmetryAttemptGeneration(I->Symmetry, false);
+      SymmetryUpdate(I->Symmetry);
     }
     SceneCountFrames(G);
     if (ok)
@@ -8444,49 +8427,6 @@ ok_except1:
 
 
 /*========================================================================*/
-void ObjectMoleculeBlindSymMovie(ObjectMolecule * I)
-{
-  CoordSet *frac;
-  ov_size a;
-  int c;
-  int x, y, z;
-  float m[16];
-
-  if(I->NCSet != 1) {
-    ErrMessage(I->Obj.G, "ObjectMolecule:",
-               "SymMovie only works on objects with a single state.");
-  } else if(!I->Symmetry) {
-    ErrMessage(I->Obj.G, "ObjectMolecule:", "No symmetry loaded!");
-  } else if(!I->Symmetry->NSymMat) {
-    ErrMessage(I->Obj.G, "ObjectMolecule:", "No symmetry matrices!");
-  } else if(I->CSet[0]) {
-    frac = CoordSetCopy(I->CSet[0]);
-    CoordSetRealToFrac(frac, I->Symmetry->Crystal);
-    for(x = -1; x < 2; x++)
-      for(y = -1; y < 2; y++)
-        for(z = -1; z < 2; z++)
-          for(a = 0; a < I->Symmetry->NSymMat; a++) {
-            if(!((!a) && (!x) && (!y) && (!z))) {
-              c = I->NCSet;
-              VLACheck(I->CSet, CoordSet *, c);
-              I->CSet[c] = CoordSetCopy(frac);
-              CoordSetTransform44f(I->CSet[c], I->Symmetry->SymMatVLA + (a * 16));
-              identity44f(m);
-              m[3] = (float) x;
-              m[7] = (float) y;
-              m[11] = (float) z;
-              CoordSetTransform44f(I->CSet[c], m);
-              CoordSetFracToReal(I->CSet[c], I->Symmetry->Crystal);
-              I->NCSet++;
-            }
-          }
-    frac->fFree();
-  }
-  SceneChanged(I->Obj.G);
-}
-
-
-/*========================================================================*/
 int ObjectMoleculeExtendIndices(ObjectMolecule * I, int state)
 {
   int a;
@@ -8641,9 +8581,11 @@ static CoordSet *ObjectMoleculeMOLStr2CoordSet(PyMOLGlobals * G, const char *buf
       }
 
       if(ok) {
+        int order = 0;
         p = ncopy(cc, p, 3);
-        if(sscanf(cc, "%d", &ii->order) != 1)
+        if(sscanf(cc, "%d", &order) != 1)
           ok = ErrMessage(G, "ReadMOLFile", "bad bond order");
+        ii->order = order;
       }
       if(ok) {
         int stereo;
@@ -8800,7 +8742,7 @@ static void ObjectMoleculeMOL2SetFormalCharges(PyMOLGlobals *G, ObjectMolecule *
     for(a = 0; a < nAtom; a++) {
       int at, fcharge = 0, isProtein = 0, k, n;
       AtomInfoType *ai;
-      char *atom_type = 0;
+      const char *atom_type = 0;
       char *atom_name = 0;
       char resname_temp[4];
       BondType *bt;
@@ -8809,7 +8751,7 @@ static void ObjectMoleculeMOL2SetFormalCharges(PyMOLGlobals *G, ObjectMolecule *
       strcpy( resname_temp, "" );
       resname_temp[3] = 0;
       if(ai->textType){
-	atom_type = OVLexicon_FetchCString(G->Lexicon, ai->textType);
+	atom_type = LexStr(G, ai->textType);
       } else {
 	PRINTFB(G, FB_Executive, FB_Warnings)
 	  "ObjectMoleculeMOL2SetFormalCharges-Warning: textType invalidated, not setting formal charges\n"
@@ -9001,13 +8943,7 @@ static CoordSet *ObjectMoleculeMOL2Str2CoordSet(PyMOLGlobals * G,
               if(el[2])
                 el[0] = 0;
 
-              ai->textType = 0;
-              if(temp[0]) {
-                OVreturn_word result = OVLexicon_GetFromCString(G->Lexicon, temp);
-                if(OVreturn_IS_OK(result)) {
-                  ai->textType = result.word;
-                }
-              }
+              ai->textType = LexIdx(G, temp);
             }
           }
           if(ok) {
@@ -9670,7 +9606,7 @@ int ObjectMoleculeMerge(ObjectMolecule * I, AtomInfoType * ai,
   CHECKOK(ok, ai2);
   if (ok){
     for(a = 0; a < cs->NIndex; a++)
-      ai2[a] = ai[index[a]];      /* creates a sorted list of atom info records */
+      ai2[a] = STD_MOVE(ai[index[a]]);      /* creates a sorted list of atom info records */
   }
   VLAFreeP(ai);
   ai = ai2;
@@ -9792,26 +9728,12 @@ int ObjectMoleculeMerge(ObjectMolecule * I, AtomInfoType * ai,
       if(a2 < oldNAtom)
 	AtomInfoCombine(G, I->AtomInfo + a2, ai + a1, aic_mask);
       else
-	*(I->AtomInfo + a2) = *(ai + a1);
+	*(I->AtomInfo + a2) = STD_MOVE(*(ai + a1));
     }
   }
 
   if(ok && I->DiscreteFlag) {
-    if(I->NDiscrete < nAt) {
-      VLASize(I->DiscreteAtmToIdx, int, nAt);
-      CHECKOK(ok, I->DiscreteAtmToIdx);
-      if (ok)
-	VLASize(I->DiscreteCSet, CoordSet *, nAt);
-      CHECKOK(ok, I->DiscreteCSet);
-      if (ok && I->NDiscrete < nAt){
-	for(a = I->NDiscrete; a < nAt; a++) {
-	  I->DiscreteAtmToIdx[a] = -1;
-	  I->DiscreteCSet[a] = NULL;
-	}
-      }
-      if (ok)
-	I->NDiscrete = nAt;
-    }
+    ok = I->setNDiscrete(nAt);
   }
 
   cs->NAtIndex = nAt;
@@ -9945,7 +9867,7 @@ void ObjectMoleculeAppendAtoms(ObjectMolecule * I, AtomInfoType * atInfo, CoordS
     dest = I->AtomInfo + I->NAtom;
     src = atInfo;
     for(a = 0; a < cs->NIndex; a++)
-      *(dest++) = *(src++);
+      *(dest++) = STD_MOVE(*(src++));
     I->NAtom = nAtom;
     VLAFreeP(atInfo);
   } else {
@@ -10235,78 +10157,14 @@ void ObjectMoleculeSeleOp(ObjectMolecule * I, int sele, ObjectMoleculeOpRec * op
         }
       break;
     case OMOP_AVRT:            /* average vertex coordinate */
-      {
-        int op_i2 = op->i2;
-        int obj_TTTFlag = I->Obj.TTTFlag;
-        if(op_i2) {
-          use_matrices =
-            SettingGet_i(I->Obj.G, I->Obj.Setting, NULL, cSetting_matrix_mode);
-          if(use_matrices<0) use_matrices = 0;
-        }
-        for(a = 0; a < I->NAtom; a++) {
-          s = I->AtomInfo[a].selEntry;
-          if((priority = SelectorIsMember(G, s, sele))) {
-            cnt = 0;
-            for(b = 0; b < I->NCSet; b++) {
-              if((cs = I->CSet[b])) {
-
-                if(I->DiscreteFlag) {
-                  if(cs == I->DiscreteCSet[a])
-                    a1 = I->DiscreteAtmToIdx[a];
-                  else
-                    a1 = -1;
-                } else
-                  a1 = cs->AtmToIdx[a];
-                if(a1 >= 0) {
-                  if(!cnt) {
-                    VLACheck(op->vv1, float, (op->nvv1 * 3) + 2);
-                    VLACheck(op->vc1, int, op->nvv1);
-                  }
-                  cnt++;
-                  vv2 = cs->Coord + (3 * a1);
-
-                  if(op_i2) {   /* do we want transformed coordinates? */
-                    if(use_matrices) {
-                      if(cs->State.Matrix) {    /* state transformation */
-                        transform44d3f(cs->State.Matrix, vv2, v1);
-                        vv2 = v1;
-                      }
-                    }
-                    if(obj_TTTFlag) {
-                      transformTTT44f3f(I->Obj.TTT, vv2, v1);
-                      vv2 = v1;
-                    }
-                  }
-
-                  vv1 = op->vv1 + (op->nvv1 * 3);
-                  *(vv1++) += *(vv2++);
-                  *(vv1++) += *(vv2++);
-                  *(vv1++) += *(vv2++);
-                }
-              }
-            }
-            op->vc1[op->nvv1] = cnt;
-            if(cnt) {
-              if(op->vp1) {
-                VLACheck(op->vp1, int, op->nvv1);
-                op->vp1[op->nvv1] = priority;
-              }
-              if(op->ai1VLA) {
-                VLACheck(op->ai1VLA, AtomInfoType *, op->nvv1);
-                op->ai1VLA[op->nvv1] = I->AtomInfo + a;
-                I->AtomInfo[a].temp1 = a;
-                /* KLUDGE ALERT!!! storing atom index in the temp1 field... */
-              }
-              op->nvv1++;
-            }
-          }
-        }
-      }
-      break;
     case OMOP_StateVRT:        /* state vertex coordinate */
       {
         int op_i2 = op->i2;
         int obj_TTTFlag = I->Obj.TTTFlag;
+        int b_end = I->NCSet;
+        if (op->code == OMOP_StateVRT && op->i1 < b_end) {
+          b_end = op->i1 + 1;
+        }
         if(op_i2) {
           use_matrices =
             SettingGet_i(I->Obj.G, I->Obj.Setting, NULL, cSetting_matrix_mode);
@@ -10314,60 +10172,64 @@ void ObjectMoleculeSeleOp(ObjectMolecule * I, int sele, ObjectMoleculeOpRec * op
         }
         for(a = 0; a < I->NAtom; a++) {
           s = I->AtomInfo[a].selEntry;
-          if((priority = SelectorIsMember(G, s, sele))) {
-            cnt = 0;
-            b = op->i1;
-            if(b < I->NCSet)
-              if((cs = I->CSet[b])) {
-                if(I->DiscreteFlag) {
-                  if(cs == I->DiscreteCSet[a])
-                    a1 = I->DiscreteAtmToIdx[a];
-                  else
-                    a1 = -1;
-                } else
-                  a1 = cs->AtmToIdx[a];
-                if(a1 >= 0) {
-                  if(!cnt) {
-                    VLACheck(op->vv1, float, (op->nvv1 * 3) + 2);
-                    VLACheck(op->vc1, int, op->nvv1);
-                  }
-                  cnt++;
-                  vv2 = cs->Coord + (3 * a1);
+          if(!(priority = SelectorIsMember(G, s, sele)))
+            continue;
 
-                  if(op_i2) {   /* do we want transformed coordinates? */
-                    if(use_matrices) {
-                      if(cs->State.Matrix) {    /* state transformation */
-                        transform44d3f(cs->State.Matrix, vv2, v1);
-                        vv2 = v1;
-                      }
-                    }
-                    if(obj_TTTFlag) {
-                      transformTTT44f3f(I->Obj.TTT, vv2, v1);
-                      vv2 = v1;
-                    }
-                  }
+          cnt = 0;
 
-                  vv1 = op->vv1 + (op->nvv1 * 3);
-                  *(vv1++) += *(vv2++);
-                  *(vv1++) += *(vv2++);
-                  *(vv1++) += *(vv2++);
+          // all states for AVRT, one state for StateVRT (don't use
+          // StateIterator which depends on settings)
+          for(b = op->i1; b < b_end; ++b) {
+            if(!(cs = I->CSet[b]))
+              continue;
+
+            if((a1 = cs->atmToIdx(a)) == -1)
+              continue;
+
+            if(!cnt) {
+              VLACheck(op->vv1, float, (op->nvv1 * 3) + 2);
+              VLACheck(op->vc1, int, op->nvv1);
+            }
+            cnt++;
+            vv2 = cs->Coord + (3 * a1);
+
+            if(op_i2) {   /* do we want transformed coordinates? */
+              if(use_matrices) {
+                if(cs->State.Matrix) {    /* state transformation */
+                  transform44d3f(cs->State.Matrix, vv2, v1);
+                  vv2 = v1;
                 }
               }
-            op->vc1[op->nvv1] = cnt;
-            if(cnt) {
-              if(op->vp1) {
-                VLACheck(op->vp1, int, op->nvv1);
-                op->vp1[op->nvv1] = priority;
+              if(obj_TTTFlag) {
+                transformTTT44f3f(I->Obj.TTT, vv2, v1);
+                vv2 = v1;
               }
-              if(op->ai1VLA) {
-                VLACheck(op->ai1VLA, AtomInfoType *, op->nvv1);
-                op->ai1VLA[op->nvv1] = I->AtomInfo + a;
-                I->AtomInfo[a].temp1 = a;
-                /* KLUDGE ALERT!!! storing atom index in the temp1 field... */
-              }
-              op->nvv1++;
             }
+
+            // sum up coordinates over states
+            vv1 = op->vv1 + (op->nvv1 * 3);
+            add3f(vv1, vv2, vv1);
           }
+
+          // number of summed up coordinates (states) for this atom
+          op->vc1[op->nvv1] = cnt;
+
+          // ordered_selections
+          if(op->vp1) {
+            VLACheck(op->vp1, int, op->nvv1);
+            op->vp1[op->nvv1] = priority;
+          }
+
+          // atom pointer VLA
+          if(op->ai1VLA) {
+            VLACheck(op->ai1VLA, AtomInfoType *, op->nvv1);
+            op->ai1VLA[op->nvv1] = I->AtomInfo + a;
+            I->AtomInfo[a].temp1 = a;
+            /* KLUDGE ALERT!!! storing atom index in the temp1 field... */
+          }
+
+          // number of atoms in selection (incl. the ones with no coordinates)
+          op->nvv1++;
         }
       }
       break;
@@ -11142,17 +11004,8 @@ void ObjectMoleculeSeleOp(ObjectMolecule * I, int sele, ObjectMoleculeOpRec * op
                       {
                         /* simple string label text */
                         AtomInfoType *ai = I->AtomInfo + a;
-                        const char *label = op->s1;
-                        if(ai->label) {
-                          OVLexicon_DecRef(I->Obj.G->Lexicon, ai->label);
-                        }
-                        ai->label = 0;
-                        if(label && label[0]) {
-                          OVreturn_word ret = OVLexicon_GetFromCString(G->Lexicon, label);
-                          if(OVreturn_IS_OK(ret)) {
-                            ai->label = ret.word;
-                          }
-                        }
+                        LexDec(G, ai->label);
+                        ai->label = LexIdx(G, op->s1);
                       }
                       break;
                     }
@@ -12393,7 +12246,6 @@ static void ObjectMoleculeRender(ObjectMolecule * I, RenderInfo * info)
   CRay *ray = info->ray;
   Picking **pick = info->pick;
   int pass = info->pass;
-  int a;
   CoordSet *cs;
   int pop_matrix = false;
   int use_matrices = SettingGet_i(I->Obj.G, I->Obj.Setting, NULL, cSetting_matrix_mode);
@@ -12422,23 +12274,9 @@ static void ObjectMoleculeRender(ObjectMolecule * I, RenderInfo * info)
       }
     }
   }
-  PRINTFD(I->Obj.G, FB_ObjectMolecule)
-    " ObjectMolecule: CGO's complete...\n" ENDFD;
-  if(state < 0) {
-    for(a = 0; a < I->NCSet; a++) {
-      cs = I->CSet[a];
-      if(cs) {
-        if(use_matrices)
-          pop_matrix = ObjectStatePushAndApplyMatrix(&cs->State, info);
-        /* need to apply object state matrix here */
-        cs->render(info);
-        if(pop_matrix)
-          ObjectStatePopMatrix(&cs->State, info);
 
-      }
-    }
-  } else if(state < I->NCSet) {
-    cs = I->CSet[(I->CurCSet = state % I->NCSet)];
+  for(StateIterator iter(G, I->Obj.Setting, state, I->NCSet); iter.next();) {
+    cs = I->CSet[iter.state];
     if(cs) {
       if(use_matrices)
         pop_matrix = ObjectStatePushAndApplyMatrix(&cs->State, info);
@@ -12446,16 +12284,6 @@ static void ObjectMoleculeRender(ObjectMolecule * I, RenderInfo * info)
       if(pop_matrix)
         ObjectStatePopMatrix(&cs->State, info);
     }
-  } else if(I->NCSet == 1) {    /* if only one coordinate set, assume static */
-    cs = I->CSet[0];
-    if(SettingGet_b(I->Obj.G, I->Obj.Setting, NULL, cSetting_static_singletons))
-      if(cs) {
-        if(use_matrices)
-          pop_matrix = ObjectStatePushAndApplyMatrix(&cs->State, info);
-        cs->render(info);
-        if(pop_matrix)
-          ObjectStatePopMatrix(&cs->State, info);
-      }
   }
   PRINTFD(I->Obj.G, FB_ObjectMolecule)
     " ObjectMolecule: rendering complete for object %s.\n", I->Obj.Name ENDFD;
@@ -12565,32 +12393,21 @@ ObjectMolecule *ObjectMoleculeNew(PyMOLGlobals * G, int discreteFlag)
 {
   int a;
   int ok = true;
-  OOAlloc(G, ObjectMolecule);
+  OOCalloc(G, ObjectMolecule);
   CHECKOK(ok, I);
   if (!ok)
     return NULL;
   ObjectInit(G, (CObject *) I);
   I->Obj.type = cObjectMolecule;
-  I->NAtom = 0;
-  I->NBond = 0;
-  I->AtomInfo = NULL;
   I->CSet = VLACalloc(CoordSet *, 10); /* auto-zero */
   CHECKOK(ok, I->CSet);
   if (!ok){
     OOFreeP(I);
     return NULL;
   }
-  I->NCSet = 0;
-  I->Bond = NULL;
   I->AtomCounter = -1;
   I->BondCounter = -1;
   I->DiscreteFlag = discreteFlag;
-  I->NDiscrete = 0;
-  I->UnitCellCGO = NULL;
-  I->Sculpt = NULL;
-  I->CSTmpl = NULL;
-  I->DiscreteAtmToIdx = NULL;
-  I->DiscreteCSet = NULL;
   if(I->DiscreteFlag) {         /* discrete objects don't share atoms between states */
     I->DiscreteAtmToIdx = VLACalloc(int, 0);
     CHECKOK(ok, I->DiscreteAtmToIdx);
@@ -12627,10 +12444,6 @@ ObjectMolecule *ObjectMoleculeNew(PyMOLGlobals * G, int discreteFlag)
     ObjectMoleculeFree(I);
     return NULL;
   }
-  I->CurCSet = 0;
-  I->Symmetry = NULL;
-  I->Neighbor = NULL;
-  I->RepVisCacheValid = false;
   for(a = 0; a <= cUndoMask; a++) {
     I->UndoCoord[a] = NULL;
     I->UndoState[a] = -1;
@@ -12649,7 +12462,7 @@ ObjectMolecule *ObjectMoleculeCopy(const ObjectMolecule * obj)
   int a;
   BondType *i0, *i1;
   AtomInfoType *a0, *a1;
-  OOAlloc(G, ObjectMolecule);
+  OOCalloc(G, ObjectMolecule);
   (*I) = (*obj);
   I->Symmetry = SymmetryCopy(I->Symmetry);      /* null-safe */
   I->UnitCellCGO = NULL;
@@ -12754,6 +12567,10 @@ void ObjectMoleculeFree(ObjectMolecule * I)
   VLAFreeP(I->DiscreteAtmToIdx);
   VLAFreeP(I->DiscreteCSet);
   VLAFreeP(I->CSet);
+#ifndef _PYMOL_NO_CXX11
+  I->m_ciffile.reset(); // free data
+#endif
+
   {
     int nAtom = I->NAtom;
     AtomInfoType *ai = I->AtomInfo;
@@ -13025,7 +12842,8 @@ ObjectMolecule *ObjectMoleculeReadPDBStr(PyMOLGlobals * G, ObjectMolecule * I,
         ok &= ObjectMoleculeConnect(I, &I->NBond, &I->Bond, I->AtomInfo, cset, true, -1);
       if(ok && cset->Symmetry && (!I->Symmetry)) {
         I->Symmetry = SymmetryCopy(cset->Symmetry);
-        if(SymmetryAttemptGeneration(I->Symmetry, quiet)) {
+        SymmetryUpdate(I->Symmetry);
+        if (I->Symmetry->Crystal) {
           /* check scale records */
           if(pdb_info &&
              pdb_info->scale.flag[0] &&
@@ -13269,6 +13087,7 @@ CoordSet *ObjectMoleculeMMDStr2CoordSet(PyMOLGlobals * G, const char *buffer,
   return (cset);
 }
 
+#ifdef _PYMOL_IP_EXTRAS
 void ObjectMoleculeSetAtomBondInfoTypeOldId(PyMOLGlobals * G, ObjectMolecule * obj){
   int i;
   AtomInfoType *ai = obj->AtomInfo;
@@ -13295,6 +13114,8 @@ void ObjectMoleculeSetAtomBondInfoTypeOldIdToNegOne(PyMOLGlobals * G, ObjectMole
     bi++;
   }
 }
+#endif
+
 void ObjectMoleculeAdjustDiscreteAtmIdx(ObjectMolecule *I, int *lookup, int nAtom){
   int a, a0;
   if (I->DiscreteAtmToIdx){
@@ -13360,4 +13181,75 @@ int *AtomInfoGetSortedIndex(PyMOLGlobals * G, ObjectMolecule * obj,
 ok_except1:
   FreeP(index);
   return NULL;
+}
+
+/*
+ * Set the size of the DiscreteAtmToIdx and DiscreteCSet VLAs and pad
+ * them with -1/NULL if necessary.
+ */
+bool ObjectMolecule::setNDiscrete(int natom) {
+  int n = VLAGetSize(DiscreteAtmToIdx);
+
+  if (n == natom)
+    return true;
+
+  VLASize(DiscreteAtmToIdx, int, natom);
+  VLASize(DiscreteCSet, CoordSet*, natom);
+
+  if (!DiscreteAtmToIdx || !DiscreteCSet)
+    return false;
+
+  for (int i = n; i < natom; ++i) {
+    DiscreteAtmToIdx[i] = -1;
+    DiscreteCSet[i] = NULL;
+  }
+
+  return true;
+}
+
+/*
+ * Update the AtmToIdx or DiscreteAtmToIdx/DiscreteCSet VLAs from the
+ * IdxToAtm arrays
+ */
+bool ObjectMolecule::updateAtmToIdx() {
+  if (DiscreteFlag) {
+    ok_assert(1, setNDiscrete(NAtom));
+  }
+
+  for (int i = -1; i < NCSet; ++i) {
+    CoordSet * cset = (i < 0) ? CSTmpl : CSet[i];
+
+    if (!cset)
+      continue;
+
+    if (!DiscreteFlag) {
+      if (!cset->AtmToIdx) {
+        cset->AtmToIdx = VLACalloc(int, NAtom);
+      } else {
+        VLASize(cset->AtmToIdx, int, NAtom);
+      }
+
+      ok_assert(1, cset->AtmToIdx);
+
+      std::fill_n(cset->AtmToIdx, NAtom, -1);
+    }
+
+    for (int idx = 0; idx < cset->NIndex; ++idx) {
+      int atm = cset->IdxToAtm[idx];
+
+      if (DiscreteFlag) {
+        DiscreteAtmToIdx[atm] = idx;
+        DiscreteCSet[atm] = cset;
+        AtomInfo[atm].discrete_state = i + 1;
+      } else {
+        cset->AtmToIdx[atm] = idx;
+      }
+    }
+
+    cset->NAtIndex = NAtom;
+  }
+
+  return true;
+ok_except1:
+  return false;
 }

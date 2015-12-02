@@ -14,6 +14,9 @@ I* Additional authors of this source file include:
 -*
 Z* -------------------------------------------------------------------
 */
+#include <utility>
+#include <algorithm>
+
 #include"os_python.h"
 
 #include"os_predef.h"
@@ -25,12 +28,16 @@ Z* -------------------------------------------------------------------
 #include"Err.h"
 #include"Feedback.h"
 #include"Util.h"
+#include"Util2.h"
 #include"Color.h"
 #include"PConv.h"
 #include"Ortho.h"
 #include"OVOneToAny.h"
 #include"OVContext.h"
 #include"PyMOLObject.h"
+#include"Executive.h"
+
+#include <map>
 
 struct _CAtomInfo {
   int NColor, CColor, DColor, HColor, OColor, SColor;
@@ -265,6 +272,7 @@ int AtomInfoGetNewUniqueID(PyMOLGlobals * G)
       }
     }
   }
+  ExecutiveUniqueIDAtomDictInvalidate(G);
   return result;
 }
 
@@ -283,7 +291,9 @@ int AtomInfoCheckUniqueBondID(PyMOLGlobals * G, BondType * bi)
 }
 
 void BondTypeInit(BondType *bt){
+#ifdef _PYMOL_IP_EXTRAS
   bt->oldid = -1;
+#endif
   bt->unique_id = 0;
   bt->has_setting = 0;
 }
@@ -1011,12 +1021,13 @@ PyObject *AtomInfoAsPyList(PyMOLGlobals * G, AtomInfoType * I)
   PyList_SetItem(result, 38, PyInt_FromLong((int) I->hb_acceptor));
   PyList_SetItem(result, 39, PyInt_FromLong(0 /* atomic_color */));
   PyList_SetItem(result, 40, PyInt_FromLong((int) I->has_setting));
-  PyList_SetItem(result, 41, PyFloat_FromDouble(I->U11));
-  PyList_SetItem(result, 42, PyFloat_FromDouble(I->U22));
-  PyList_SetItem(result, 43, PyFloat_FromDouble(I->U33));
-  PyList_SetItem(result, 44, PyFloat_FromDouble(I->U12));
-  PyList_SetItem(result, 45, PyFloat_FromDouble(I->U13));
-  PyList_SetItem(result, 46, PyFloat_FromDouble(I->U23));
+
+  const float anisou_stack[] {0.f, 0.f, 0.f, 0.f, 0.f, 0.f};
+  const float * anisou = I->anisou ? I->anisou : anisou_stack;
+  for (int i = 0; i < 6; ++i) {
+    PyList_SetItem(result, 41 + i, PyFloat_FromDouble(anisou[i]));
+  }
+
   PyList_SetItem(result, 47, PyString_FromString(LexStr(G, I->custom)));
 
   return (PConvAutoNone(result));
@@ -1029,7 +1040,7 @@ int AtomInfoFromPyList(PyMOLGlobals * G, AtomInfoType * I, PyObject * list)
   return 0;
 #else
   int ok = true;
-  int hetatm;
+  int tmp_int;
   ov_size ll = 0;
   if(ok)
     ok = PyList_Check(list);
@@ -1056,25 +1067,13 @@ int AtomInfoFromPyList(PyMOLGlobals * G, AtomInfoType * I, PyObject * list)
     ok = PConvPyStrToStr(PyList_GetItem(list, 7), I->elem, sizeof(ElemName));
   if(ok) {
     OrthoLineType temp;
-    PConvPyStrToStr(PyList_GetItem(list, 8), temp, sizeof(OrthoLineType));
-    I->textType = 0;
-    if(temp[0]) {
-      OVreturn_word result = OVLexicon_GetFromCString(G->Lexicon, temp);
-      if(OVreturn_IS_OK(result)) {
-        I->textType = result.word;
-      }
-    }
+    CPythonVal_PConvPyStrToStr_From_List(G, list, 8, temp, sizeof(OrthoLineType));
+    I->textType = LexIdx(G, temp);
   }
   if(ok) {
     OrthoLineType temp;
-    PConvPyStrToStr(PyList_GetItem(list, 9), temp, sizeof(OrthoLineType));
-    I->textType = 0;
-    if(temp[0]) {
-      OVreturn_word result = OVLexicon_GetFromCString(G->Lexicon, temp);
-      if(OVreturn_IS_OK(result)) {
-        I->label = result.word;
-      }
-    }
+    CPythonVal_PConvPyStrToStr_From_List(G, list, 9, temp, sizeof(OrthoLineType));
+    I->label = LexIdx(G, temp);
   }
   if(ok)
     ok = PConvPyStrToStr(PyList_GetItem(list, 10), I->ssType, sizeof(SSType));
@@ -1091,11 +1090,11 @@ int AtomInfoFromPyList(PyMOLGlobals * G, AtomInfoType * I, PyObject * list)
   if(ok)
     ok = PConvPyFloatToFloat(PyList_GetItem(list, 17), &I->partialCharge);
   if(ok)
-    ok = PConvPyIntToChar(PyList_GetItem(list, 18), (char *) &I->formalCharge);
+    if((ok = CPythonVal_PConvPyIntToInt_From_List(G, list, 18, &tmp_int)))
+      I->formalCharge = tmp_int;
   if(ok)
-    ok = PConvPyIntToInt(PyList_GetItem(list, 19), &hetatm);
-  if(ok)
-    I->hetatm = hetatm;
+    if((ok = CPythonVal_PConvPyIntToInt_From_List(G, list, 19, &tmp_int)))
+      I->hetatm = tmp_int;
   if(ok){
     PyObject *val = PyList_GetItem(list, 20);
     if (PyList_Check(val)){
@@ -1111,33 +1110,38 @@ int AtomInfoFromPyList(PyMOLGlobals * G, AtomInfoType * I, PyObject * list)
   if(ok)
     ok = PConvPyIntToInt(PyList_GetItem(list, 22), &I->id);
   if(ok)
-    ok = PConvPyIntToChar(PyList_GetItem(list, 23), (char *) &I->cartoon);
+    if((ok = CPythonVal_PConvPyIntToInt_From_List(G, list, 23, &tmp_int)))
+      I->cartoon = tmp_int;
   if(ok)
     ok = PConvPyIntToInt(PyList_GetItem(list, 24), (int *) &I->flags);
   if(ok)
-    ok = PConvPyIntToChar(PyList_GetItem(list, 25), (char *) &I->bonded);
+    if((ok = CPythonVal_PConvPyIntToInt_From_List(G, list, 25, &tmp_int)))
+      I->bonded = tmp_int;
   if(ok)
-    ok = PConvPyIntToChar(PyList_GetItem(list, 26), (char *) &I->chemFlag);
+    if((ok = CPythonVal_PConvPyIntToInt_From_List(G, list, 26, &tmp_int)))
+      I->chemFlag = tmp_int;
   if(ok)
-    ok = PConvPyIntToChar(PyList_GetItem(list, 27), (char *) &I->geom);
+    if((ok = CPythonVal_PConvPyIntToInt_From_List(G, list, 27, &tmp_int)))
+      I->geom = tmp_int;
   if(ok)
-    ok = PConvPyIntToChar(PyList_GetItem(list, 28), (char *) &I->valence);
+    if((ok = CPythonVal_PConvPyIntToInt_From_List(G, list, 28, &tmp_int)))
+      I->valence = tmp_int;
   if(ok)
-    ok = PConvPyIntToChar(PyList_GetItem(list, 29), (char *) &I->masked);
+    if((ok = CPythonVal_PConvPyIntToInt_From_List(G, list, 29, &tmp_int)))
+      I->masked = tmp_int;
   if(ok)
-    ok = PConvPyIntToChar(PyList_GetItem(list, 30), (char *) &I->protekted);
+    if((ok = CPythonVal_PConvPyIntToInt_From_List(G, list, 30, &tmp_int)))
+      I->protekted = tmp_int;
   if(ok)
     ok = PConvPyIntToChar(PyList_GetItem(list, 31), (char *) &I->protons);
   if(ok)
     ok = PConvPyIntToInt(PyList_GetItem(list, 32), &I->unique_id);
   if(ok && I->unique_id) {      /* reserve existing IDs */
-    CAtomInfo *II = G->AtomInfo;
-    AtomInfoPrimeUniqueIDs(G);
     I->unique_id = SettingUniqueConvertOldSessionID(G, I->unique_id);
-    OVOneToAny_SetKey(II->ActiveIDs, I->unique_id, 1);
   }
   if(ok)
-    ok = PConvPyIntToChar(PyList_GetItem(list, 33), (char *) &I->stereo);
+    if((ok = CPythonVal_PConvPyIntToInt_From_List(G, list, 33, &tmp_int)))
+      I->stereo = tmp_int;
   if(ok && (ll > 34))
     ok = PConvPyIntToInt(PyList_GetItem(list, 34), &I->discrete_state);
   if(ok && (ll > 35))
@@ -1145,35 +1149,26 @@ int AtomInfoFromPyList(PyMOLGlobals * G, AtomInfoType * I, PyObject * list)
   if(ok && (ll > 36))
     ok = PConvPyIntToInt(PyList_GetItem(list, 36), &I->rank);
   if(ok && (ll > 37))
-    ok = PConvPyIntToChar(PyList_GetItem(list, 37), (char *) &I->hb_donor);
+    if ((ok = CPythonVal_PConvPyIntToInt_From_List(G, list, 37, &tmp_int)))
+      I->hb_donor = tmp_int;
   if(ok && (ll > 38))
-    ok = PConvPyIntToChar(PyList_GetItem(list, 38), (char *) &I->hb_acceptor);
+    if ((ok = CPythonVal_PConvPyIntToInt_From_List(G, list, 38, &tmp_int)))
+      I->hb_acceptor = tmp_int;
   if(ok && (ll > 40))
-    ok = PConvPyIntToChar(PyList_GetItem(list, 40), (char *) &I->has_setting);
+    if ((ok = CPythonVal_PConvPyIntToInt_From_List(G, list, 40, &tmp_int)))
+      I->has_setting = tmp_int;
   if(ok && (ll > 46)) {
-    if(ok)
-      ok = PConvPyFloatToFloat(PyList_GetItem(list, 41), &I->U11);
-    if(ok)
-      ok = PConvPyFloatToFloat(PyList_GetItem(list, 42), &I->U22);
-    if(ok)
-      ok = PConvPyFloatToFloat(PyList_GetItem(list, 43), &I->U33);
-    if(ok)
-      ok = PConvPyFloatToFloat(PyList_GetItem(list, 44), &I->U12);
-    if(ok)
-      ok = PConvPyFloatToFloat(PyList_GetItem(list, 45), &I->U13);
-    if(ok)
-      ok = PConvPyFloatToFloat(PyList_GetItem(list, 46), &I->U23);
+    // only allocate if not all zero
+    float u[6];
+    for (int i = 0; ok && i < 6; ++i)
+      ok = CPythonVal_PConvPyFloatToFloat_From_List(G, list, 41 + i, u + i);
+    if(ok && (u[0] || u[1] || u[2] || u[3] || u[4] || u[5]))
+      memcpy(I->get_anisou(), u, 6 * sizeof(float));
   }
   if(ok && (ll > 47)) {
     OrthoLineType temp;
-    PConvPyStrToStr(PyList_GetItem(list, 47), temp, sizeof(OrthoLineType));
-    I->custom = 0;
-    if(temp[0]) {
-      OVreturn_word result = OVLexicon_GetFromCString(G->Lexicon, temp);
-      if(OVreturn_IS_OK(result)) {
-        I->custom = result.word;
-      }
-    }
+    CPythonVal_PConvPyStrToStr_From_List(G, list, 47, temp, sizeof(OrthoLineType));
+    I->custom = LexIdx(G, temp);
   }
   return (ok);
 #endif
@@ -1193,17 +1188,15 @@ void AtomInfoCopy(PyMOLGlobals * G, const AtomInfoType * src, AtomInfoType * dst
     dst->unique_id = 0;
     dst->has_setting = 0;
   }
-  if(dst->label) {
-    OVLexicon_IncRef(G->Lexicon, dst->label);
-  }
-  if(dst->textType) {
-    OVLexicon_IncRef(G->Lexicon, dst->textType);
-  }
-  if(dst->custom) {
-    OVLexicon_IncRef(G->Lexicon, dst->custom);
-  }
-  if(dst->chain) {
-    OVLexicon_IncRef(G->Lexicon, dst->chain);
+  LexInc(G, dst->label);
+  LexInc(G, dst->textType);
+  LexInc(G, dst->custom);
+  LexInc(G, dst->chain);
+#ifdef _PYMOL_IP_EXTRAS
+#endif
+  if (src->anisou) {
+    dst->anisou = NULL;
+    memcpy(dst->get_anisou(), src->anisou, 6 * sizeof(float));
   }
 }
 
@@ -1236,39 +1229,39 @@ void AtomInfoPurgeBond(PyMOLGlobals * G, BondType * bi)
 void AtomInfoPurge(PyMOLGlobals * G, AtomInfoType * ai)
 {
   CAtomInfo *I = G->AtomInfo;
-  if(ai->textType) {
-    OVLexicon_DecRef(G->Lexicon, ai->textType);
-  }
-  if(ai->custom) {
-    OVLexicon_DecRef(G->Lexicon, ai->custom);
-  }
+  LexDec(G, ai->textType);
+  LexDec(G, ai->custom);
+  LexDec(G, ai->label);
+  LexDec(G, ai->chain);
+  ai->textType = 0;
+  ai->custom = 0;
+  ai->label = 0;
+  ai->chain = 0;
   if(ai->has_setting && ai->unique_id) {
     SettingUniqueDetachChain(G, ai->unique_id);
   }
-  if(ai->unique_id && I->ActiveIDs) {
-    OVOneToAny_DelKey(I->ActiveIDs, ai->unique_id);
+  if(ai->unique_id) {
+    ExecutiveUniqueIDAtomDictInvalidate(G);
+
+    if (I->ActiveIDs)
+      OVOneToAny_DelKey(I->ActiveIDs, ai->unique_id);
   }
-  if(ai->label) {
-    OVLexicon_DecRef(G->Lexicon, ai->label);
-  }
-  if(ai->chain) {
-    OVLexicon_DecRef(G->Lexicon, ai->chain);
-  }
+#ifdef _PYMOL_IP_EXTRAS
+#endif
+  DeleteAP(ai->anisou);
 }
 
 
 /*========================================================================*/
+/*
+ * Transfer `mask` selected atomic properties (such as b, q, text_type, etc.)
+ * from `src` to `dst`, while keeping all atomic identifiers untouched.
+ * Purges `src`.
+ */
 void AtomInfoCombine(PyMOLGlobals * G, AtomInfoType * dst, AtomInfoType * src, int mask)
 {
   if(mask & cAIC_tt) {
-    if(dst->textType) {
-      OVLexicon_DecRef(G->Lexicon, dst->textType);
-      dst->textType = 0;
-    }
-    dst->textType = src->textType;
-  } else if(src->textType) {
-    OVLexicon_DecRef(G->Lexicon, src->textType);
-    src->textType = 0;
+    std::swap(dst->textType, src->textType);
   }
   if(mask & cAIC_ct)
     dst->customType = src->customType;
@@ -1289,17 +1282,19 @@ void AtomInfoCombine(PyMOLGlobals * G, AtomInfoType * dst, AtomInfoType * src, i
   if(mask & cAIC_rank)
     dst->rank = src->rank;
   dst->temp1 = src->temp1;
-  dst->unique_id = src->unique_id;
+
+  SWAP_NOREF(dst->has_setting, src->has_setting);
+  std::swap(dst->unique_id, src->unique_id);
+#ifdef _PYMOL_IP_EXTRAS
+  std::swap(dst->prop_id, src->prop_id);
+#endif
+
   /* keep all existing names, identifiers, etc. */
   /* also keep all existing selections,
      colors, masks, and visible representations */
-  {
-    if(src->label) {            /* destroy src label if one exists */
-      OVLexicon_DecRef(G->Lexicon, src->label);
-      src->label = 0;
-    }
     /* leaves dst->label untouched */
-  }
+
+  AtomInfoPurge(G, src);
 }
 
 
@@ -1907,463 +1902,171 @@ float AtomInfoGetBondLength(PyMOLGlobals * G, AtomInfoType * ai1, AtomInfoType *
   return (result);
 }
 
+/*
+ * Periodic table of elements
+ *
+ * Note: Default VDW radius is 1.80
+ */
+const struct {
+  const char * name;
+  const char * symbol;
+  float vdw;
+  float weight;
+} ElementTable[] = {
+  {"lonepair",          "LP",   0.50,   0.000000},
+  {"hydrogen",          "H",    1.20,   1.007940},
+  {"helium",            "He",   1.40,   4.002602},
+  {"lithium",           "Li",   1.82,   6.941000},
+  {"beryllium",         "Be",   1.80,   9.012182},
+  {"boron",             "B",    1.85,  10.811000},
+  {"carbon",            "C",    1.70,  12.010700},
+  {"nitrogen",          "N",    1.55,  14.006700},
+  {"oxygen",            "O",    1.52,  15.999400},
+  {"fluorine",          "F",    1.47,  18.998403},
+  {"neon",              "Ne",   1.54,  20.179700},
+  {"sodium",            "Na",   2.27,  22.989770},
+  {"magnesium",         "Mg",   1.73,  24.305000},
+  {"aluminum",          "Al",   2.00,  26.981538},
+  {"silicon",           "Si",   2.10,  28.085500},
+  {"phosphorus",        "P",    1.80,  30.973761},
+  {"sulfur",            "S",    1.80,  32.065000},
+  {"chlorine",          "Cl",   1.75,  35.453000},
+  {"argon",             "Ar",   1.88,  39.948000},
+  {"potassium",         "K",    2.75,  39.098300},
+  {"calcium",           "Ca",   1.80,  40.078000},
+  {"scandium",          "Sc",   1.80,  44.955910},
+  {"titanium",          "Ti",   1.80,  47.867000},
+  {"vanadium",          "V",    1.80,  50.941500},
+  {"chromium",          "Cr",   1.80,  51.996100},
+  {"manganese",         "Mn",   1.73,  54.938049},
+  {"iron",              "Fe",   1.80,  55.845000},
+  {"cobalt",            "Co",   1.80,  58.933200},
+  {"nickel",            "Ni",   1.63,  58.693400},
+  {"copper",            "Cu",   1.40,  63.546000},
+  {"zinc",              "Zn",   1.39,  65.390000},
+  {"gallium",           "Ga",   1.87,  69.723000},
+  {"germanium",         "Ge",   1.80,  72.640000},
+  {"arsenic",           "As",   1.85,  74.921600},
+  {"selenium",          "Se",   1.90,  78.960000},
+  {"bromine",           "Br",   1.85,  79.904000},
+  {"krypton",           "Kr",   2.02,  83.800000},
+  {"rubidium",          "Rb",   1.80,  85.467800},
+  {"strontium",         "Sr",   1.80,  87.620000},
+  {"yttrium",           "Y",    1.80,  88.905850},
+  {"zirconium",         "Zr",   1.80,  91.224000},
+  {"niobium",           "Nb",   1.80,  92.906380},
+  {"molybdenum",        "Mo",   1.80,  95.940000},
+  {"technetium",        "Tc",   1.80,  98.000000},
+  {"ruthenium",         "Ru",   1.80, 101.070000},
+  {"rhodium",           "Rh",   1.80, 102.905500},
+  {"palladium",         "Pd",   1.63, 106.420000},
+  {"silver",            "Ag",   1.72, 107.868200},
+  {"cadmium",           "Cd",   1.58, 112.411000},
+  {"indium",            "In",   1.93, 114.818000},
+  {"tin",               "Sn",   2.17, 118.710000},
+  {"antimony",          "Sb",   1.80, 121.760000},
+  {"tellurium",         "Te",   2.06, 127.600000},
+  {"iodine",            "I",    1.98, 126.904470},
+  {"xenon",             "Xe",   2.16, 131.293000},
+  {"cesium",            "Cs",   1.80, 132.905450},
+  {"barium",            "Ba",   1.80, 137.327000},
+  {"lanthanum",         "La",   1.80, 138.905500},
+  {"cerium",            "Ce",   1.80, 140.116000},
+  {"praseodymium",      "Pr",   1.80, 140.907650},
+  {"neodymium",         "Nd",   1.80, 144.240000},
+  {"promethium",        "Pm",   1.80, 145.000000},
+  {"samarium",          "Sm",   1.80, 150.360000},
+  {"europium",          "Eu",   1.80, 151.964000},
+  {"gadolinium",        "Gd",   1.80, 157.250000},
+  {"terbium",           "Tb",   1.80, 158.925340},
+  {"dysprosium",        "Dy",   1.80, 162.500000},
+  {"holmium",           "Ho",   1.80, 164.930320},
+  {"erbium",            "Er",   1.80, 167.259000},
+  {"thulium",           "Tm",   1.80, 168.934210},
+  {"ytterbium",         "Yb",   1.80, 173.040000},
+  {"lutetium",          "Lu",   1.80, 174.967000},
+  {"hafnium",           "Hf",   1.80, 178.490000},
+  {"tantalum",          "Ta",   1.80, 180.947900},
+  {"tungsten",          "W",    1.80, 183.840000},
+  {"rhenium",           "Re",   1.80, 186.207000},
+  {"osmium",            "Os",   1.80, 190.230000},
+  {"iridium",           "Ir",   1.80, 192.217000},
+  {"platinum",          "Pt",   1.75, 195.078000},
+  {"gold",              "Au",   1.66, 196.966550},
+  {"mercury",           "Hg",   1.55, 200.590000},
+  {"thallium",          "Tl",   1.96, 204.383300},
+  {"lead",              "Pb",   2.02, 207.200000},
+  {"bismuth",           "Bi",   1.80, 208.980380},
+  {"polonium",          "Po",   1.80, 208.980000},
+  {"astatine",          "At",   1.80, 209.990000},
+  {"radon",             "Rn",   1.80, 222.020000},
+  {"francium",          "Fr",   1.80, 223.020000},
+  {"radium",            "Ra",   1.80, 226.030000},
+  {"actinium",          "Ac",   1.80, 227.030000},
+  {"thorium",           "Th",   1.80, 232.038100},
+  {"protactinium",      "Pa",   1.80, 231.035880},
+  {"uranium",           "U",    1.86, 238.028910},
+  {"neptunium",         "Np",   1.80, 237.050000},
+  {"plutonium",         "Pu",   1.80, 244.060000},
+  {"americium",         "Am",   1.80, 243.060000},
+  {"curium",            "Cm",   1.80, 247.070000},
+  {"berkelium",         "Bk",   1.80, 247.070000},
+  {"californium",       "Cf",   1.80, 251.080000},
+  {"einsteinium",       "Es",   1.80, 252.080000},
+  {"fermium",           "Fm",   1.80, 257.100000},
+  {"mendelevium",       "Md",   1.80, 258.100000},
+  {"nobelium",          "No",   1.80, 259.100000},
+  {"lawrencium",        "Lr",   1.80, 262.110000},
+  {"rutherfordium",     "Rf",   1.80, 261.110000},
+  {"dubnium",           "Db",   1.80, 262.110000},
+  {"seaborgium",        "Sg",   1.80, 266.120000},
+  {"bohrium",           "Bh",   1.80, 264.120000},
+  {"hassium",           "Hs",   1.80, 269.130000},
+  {"meitnerium",        "Mt",   1.80, 268.140000},
+  {"darmstadtium",      "Ds",   1.80, 281.000000},
+  {"roentgenium",       "Rg",   1.80, 281.000000},
+  {"copernicium",       "Cn",   1.80, 285.000000},
+  {NULL,                NULL,   0.00,   0.000000}
+};
+
+const int ElementTableSize = sizeof(ElementTable) / sizeof(ElementTable[0]) - 1;
+
+/*
+ * Assign atomic color, or G->AtomInfo->CColor in case of carbon.
+ */
 void AtomInfoAssignColors(PyMOLGlobals * G, AtomInfoType * at1)
 {
   at1->color = AtomInfoGetColor(G, at1);
 }
 
+/*
+ * Get atomic color, based on protons and elem
+ */
 int AtomInfoGetColor(PyMOLGlobals * G, AtomInfoType * at1)
 {
-  const char *n = at1->elem;
-  CAtomInfo *I = G->AtomInfo;
-  int color = I->DefaultColor;
+  // fast lookup for most common elements
+  switch (at1->protons) {
+    case cAN_H:
+      if (at1->elem[0] == 'D')
+        return G->AtomInfo->DColor;
+      return G->AtomInfo->HColor;
+    case cAN_N: return G->AtomInfo->NColor;
+    case cAN_C: return G->AtomInfo->CColor;
+    case cAN_O: return G->AtomInfo->OColor;
+    case cAN_P: return G->AtomInfo->PColor;
+  }
 
-  if(!n[0]) {
-    n = at1->name;
-    while(((*n) >= '0') && ((*n) <= '9') && (*(n + 1)))
-      n++;
-  }
-  {
-    char c1 = n[0], c2 = n[1];
-    c2 = tolower(c2);
-    if(c2 <= 32)
-      c2 = 0;
-    switch (c1) {
-    case 'A':
-      switch (c2) {
-      case 'c':
-        color = ColorGetIndex(G, "actinium");
-        break;
-      case 'g':
-        color = ColorGetIndex(G, "silver");
-        break;
-      case 'l':
-        color = ColorGetIndex(G, "aluminum");
-        break;
-      case 'm':
-        color = ColorGetIndex(G, "americium");
-        break;
-      case 'r':
-        color = ColorGetIndex(G, "argon");
-        break;
-      case 's':
-        color = ColorGetIndex(G, "arsenic");
-        break;
-      case 't':
-        color = ColorGetIndex(G, "astatine");
-        break;
-      case 'u':
-        color = ColorGetIndex(G, "gold");
-        break;
-      }
-      break;
-    case 'B':
-      switch (c2) {
-      case 0:
-        color = ColorGetIndex(G, "boron");
-        break;
-      case 'a':
-        color = ColorGetIndex(G, "barium");
-        break;
-      case 'e':
-        color = ColorGetIndex(G, "beryllium");
-        break;
-      case 'h':
-        color = ColorGetIndex(G, "bohrium");
-        break;
-      case 'i':
-        color = ColorGetIndex(G, "bismuth");
-        break;
-      case 'k':
-        color = ColorGetIndex(G, "berkelium");
-        break;
-      case 'r':
-        color = I->BrColor;
-        break;
-      }
-      break;
-    case 'C':
-      switch (c2) {
-      case 0:
-        color = I->CColor;
-        break;
-      case 'a':
-        color = ColorGetIndex(G, "calcium");
-        break;
-      case 'd':
-        color = ColorGetIndex(G, "cadmium");
-        break;
-      case 'e':
-        color = ColorGetIndex(G, "cerium");
-        break;
-      case 'f':
-        color = ColorGetIndex(G, "californium");
-        break;
-      case 'l':
-        color = I->ClColor;
-        break;
-      case 'm':
-        color = ColorGetIndex(G, "curium");
-        break;
-      case 'o':
-        color = ColorGetIndex(G, "cobalt");
-        break;
-      case 'r':
-        color = ColorGetIndex(G, "chromium");
-        break;
-      case 's':
-        color = ColorGetIndex(G, "cesium");
-        break;
-      case 'u':
-        color = I->CuColor;
-        break;
-      }
-      break;
-    case 'D':
-      switch (c2) {
-      case 0:
-        color = I->DColor;
-        break;
-      case 'b':
-        color = ColorGetIndex(G, "dubnium");
-        break;
-      case 'y':
-        color = ColorGetIndex(G, "dysprosium");
-        break;
-      }
-      break;
-    case 'E':
-      switch (c2) {
-      case 'r':
-        color = ColorGetIndex(G, "erbium");
-        break;
-      case 's':
-        color = ColorGetIndex(G, "einsteinium");
-        break;
-      case 'u':
-        color = ColorGetIndex(G, "europium");
-        break;
-      }
-      break;
-    case 'F':
-      switch (c2) {
-      case 0:
-        color = I->FColor;
-        break;
-      case 'e':
-        color = I->FeColor;
-        break;
-      case 'm':
-        color = ColorGetIndex(G, "fermium");
-        break;
-      case 'r':
-        color = ColorGetIndex(G, "francium");
-        break;
-      }
-      break;
-    case 'G':
-      switch (c2) {
-      case 'a':
-        color = ColorGetIndex(G, "gallium");
-        break;
-      case 'd':
-        color = ColorGetIndex(G, "gadolinium");
-        break;
-      case 'e':
-        color = ColorGetIndex(G, "germanium");
-        break;
-      }
-      break;
-    case 'H':
-      switch (c2) {
-      case 0:
-        color = I->HColor;
-        break;
-      case 'e':
-        color = ColorGetIndex(G, "helium");
-        break;
-      case 'f':
-        color = ColorGetIndex(G, "hafnium");
-        break;
-      case 'g':
-        color = ColorGetIndex(G, "mercury");
-        break;
-      case 'o':
-        color = ColorGetIndex(G, "holmium");
-        break;
-      case 's':
-        color = ColorGetIndex(G, "hassium");
-        break;
-      }
-      break;
-    case 'I':
-      switch (c2) {
-      case 0:
-        color = I->IColor;
-        break;
-      case 'n':
-        color = ColorGetIndex(G, "indium");
-        break;
-      case 'r':
-        color = ColorGetIndex(G, "iridium");
-        break;
-      }
-      break;
-    case 'K':
-      switch (c2) {
-      case 0:
-        color = ColorGetIndex(G, "potassium");
-        break;
-      case 'r':
-        color = ColorGetIndex(G, "krypton");
-        break;
-      }
-      break;
-    case 'L':
-      switch (c2) {
-      case 'a':
-        color = ColorGetIndex(G, "lanthanum");
-        break;
-      case 'i':
-        color = ColorGetIndex(G, "lithium");
-        break;
-      case 'r':
-        color = ColorGetIndex(G, "lawrencium");
-        break;
-      case 'p':
-        color = ColorGetIndex(G, "lonepair");
-        break;
-      case 'u':
-        color = ColorGetIndex(G, "lutetium");
-        break;
-      }
-      break;
-    case 'M':
-      switch (c2) {
-      case 'd':
-        color = ColorGetIndex(G, "mendelevium");
-        break;
-      case 'g':
-        color = I->MgColor;
-        break;
-      case 'n':
-        color = I->MnColor;
-        break;
-      case 'o':
-        color = ColorGetIndex(G, "molybdenum");
-        break;
-      case 't':
-        color = ColorGetIndex(G, "meitnerium");
-        break;
-      }
-      break;
-    case 'N':
-      switch (c2) {
-      case 0:
-        color = I->NColor;
-        break;
-      case 'a':
-        color = I->NaColor;
-        break;
-      case 'b':
-        color = ColorGetIndex(G, "niobium");
-        break;
-      case 'd':
-        color = ColorGetIndex(G, "neodymium");
-        break;
-      case 'e':
-        color = ColorGetIndex(G, "neon");
-        break;
-      case 'i':
-        color = ColorGetIndex(G, "nickel");
-        break;
-      case 'o':
-        color = ColorGetIndex(G, "nobelium");
-        break;
-      case 'p':
-        color = ColorGetIndex(G, "neptunium");
-        break;
-      }
-      break;
-    case 'O':
-      switch (c2) {
-      case 0:
-        color = I->OColor;
-        break;
-      case 's':
-        color = ColorGetIndex(G, "osmium");
-        break;
-      }
-      break;
-    case 'P':
-      switch (c2) {
-      case 0:
-        color = I->PColor;
-        break;
-      case 'a':
-        color = ColorGetIndex(G, "protactinium");
-        break;
-      case 'b':
-        color = ColorGetIndex(G, "lead");
-        break;
-      case 'd':
-        color = ColorGetIndex(G, "palladium");
-        break;
-      case 'm':
-        color = ColorGetIndex(G, "promethium");
-        break;
-      case 'o':
-        color = ColorGetIndex(G, "polonium");
-        break;
-      case 'r':
-        color = ColorGetIndex(G, "praseodymium");
-        break;
-      case 's':
-        color = ColorGetIndex(G, "pseudoatom");
-        break;
-      case 't':
-        color = ColorGetIndex(G, "platinum");
-        break;
-      case 'u':
-        color = ColorGetIndex(G, "plutonium");
-        break;
-      }
-      break;
-    case 'R':
-      switch (c2) {
-      case 'a':
-        color = ColorGetIndex(G, "radium");
-        break;
-      case 'b':
-        color = ColorGetIndex(G, "rubidium");
-        break;
-      case 'e':
-        color = ColorGetIndex(G, "rhenium");
-        break;
-      case 'f':
-        color = ColorGetIndex(G, "rutherfordium");
-        break;
-      case 'h':
-        color = ColorGetIndex(G, "rhodium");
-        break;
-      case 'n':
-        color = ColorGetIndex(G, "radon");
-        break;
-      case 'u':
-        color = ColorGetIndex(G, "ruthenium");
-        break;
-      }
-      break;
-    case 'S':
-      switch (c2) {
-      case 0:
-        color = I->SColor;
-        break;
-      case 'b':
-        color = ColorGetIndex(G, "antimony");
-        break;
-      case 'c':
-        color = ColorGetIndex(G, "scandium");
-        break;
-      case 'e':
-        color = I->SeColor;
-        break;
-      case 'g':
-        color = ColorGetIndex(G, "seaborgium");
-        break;
-      case 'i':
-        color = ColorGetIndex(G, "silicon");
-        break;
-      case 'm':
-        color = ColorGetIndex(G, "samarium");
-        break;
-      case 'n':
-        color = ColorGetIndex(G, "tin");
-        break;
-      case 'r':
-        color = ColorGetIndex(G, "strontium");
-        break;
-      }
-      break;
-    case 'T':
-      switch (c2) {
-      case 'a':
-        color = ColorGetIndex(G, "tantalum");
-        break;
-      case 'b':
-        color = ColorGetIndex(G, "terbium");
-        break;
-      case 'c':
-        color = ColorGetIndex(G, "technetium");
-        break;
-      case 'e':
-        color = ColorGetIndex(G, "tellurium");
-        break;
-      case 'h':
-        color = ColorGetIndex(G, "thorium");
-        break;
-      case 'i':
-        color = ColorGetIndex(G, "titanium");
-        break;
-      case 'l':
-        color = ColorGetIndex(G, "thallium");
-        break;
-      case 'm':
-        color = ColorGetIndex(G, "thulium");
-        break;
-      }
-      break;
-    case 'U':
-      switch (c2) {
-      case 0:
-        color = ColorGetIndex(G, "uranium");
-        break;
-      }
-      break;
-    case 'V':
-      switch (c2) {
-      case 0:
-        color = ColorGetIndex(G, "vanadium");
-        break;
-      }
-      break;
-    case 'W':
-      switch (c2) {
-      case 0:
-        color = ColorGetIndex(G, "tungsten");
-        break;
-      }
-      break;
-    case 'X':
-      switch (c2) {
-      case 'e':
-        color = ColorGetIndex(G, "xenon");
-        break;
-      }
-      break;
-    case 'Y':
-      switch (c2) {
-      case 0:
-        color = ColorGetIndex(G, "yttrium");
-        break;
-      case 'b':
-        color = ColorGetIndex(G, "ytterbium");
-        break;
-      }
-      break;
-    case 'Z':
-      switch (c2) {
-      case 'n':
-        color = I->ZnColor;
-        break;
-      case 'r':
-        color = ColorGetIndex(G, "zirconium");
-        break;
-      }
-      break;
-    }
-  }
-  return (color);
+  // general by-name lookup (exclude LP, PS)
+  if (at1->protons > 0 && at1->protons < ElementTableSize)
+    return ColorGetIndex(G, ElementTable[at1->protons].name);
+
+  // special cases
+  if (strcmp(at1->elem, "PS") == 0)
+    return ColorGetIndex(G, "pseudoatom");
+  if (strcmp(at1->elem, "LP") == 0)
+    return ColorGetIndex(G, "lonepair");
+
+  return G->AtomInfo->DefaultColor;
 }
 
 void AtomInfoFreeSortedIndexes(PyMOLGlobals * G, int **index, int **outdex)
@@ -3070,313 +2773,86 @@ int AtomInfoGetExpectedValence(PyMOLGlobals * G, AtomInfoType * I)
   return (result);
 }
 
-static void set_protons(AtomInfoType * I, char *elem)
+/*
+ * Get number of protons for element symbol
+ */
+static int get_protons(const char * symbol)
 {
-  char *e = I->elem;
+  char titleized[4];
+  static std::map<const char *, int, cstrless_t> lookup;
 
-  if(elem)
-    e = elem;
-  while((*e >= '0') && (*e <= '9') && (*(e + 1)))
-    e++;
+  if (lookup.empty()) {
+    for (int i = 0; i < ElementTableSize; i++)
+      lookup[ElementTable[i].symbol] = i;
 
-  if(!e[1]) {                   /* single letter */
-    switch (e[0]) {
-    case 'H':
-      I->protons = cAN_H;
-      break;
-    case 'D':
-      I->protons = cAN_H;
-      break;
-    case 'Q':
-      I->protons = cAN_H;
-      break;                    /* for NMR structures */
-    case 'C':
-      I->protons = cAN_C;
-      break;
-    case 'N':
-      I->protons = cAN_N;
-      break;
-    case 'O':
-      I->protons = cAN_O;
-      break;
-    case 'F':
-      I->protons = cAN_F;
-      break;
-    case 'S':
-      I->protons = cAN_S;
-      break;
-    case 'P':
-      I->protons = cAN_P;
-      break;
-    case 'K':
-      I->protons = cAN_K;
-      break;
-    case 'I':
-      I->protons = cAN_I;
-      break;
-    case 'U':
-      I->protons = cAN_U;
-      break;
-    default:                   /* unrecognized element (possible garbage in this column?) */
-      if(!elem)
-        set_protons(I, I->name);
-      break;
-    }
+    lookup["Q"] = cAN_H;
+    lookup["D"] = cAN_H;
+  }
+
+  // check second letter for lower case
+  if (isupper(symbol[1])) {
+    UtilNCopy(titleized, symbol, 4);
+    titleized[1] = tolower(symbol[1]);
+    symbol = titleized;
+  }
+
+  // find in lookup dictionary
+  auto it = lookup.find(symbol);
+
+  if (it != lookup.end()) {
+    return it->second;
   } else {
-    switch (e[0]) {
-    case 'A':
-      switch (e[1]) {
-      case 'G':
-      case 'g':
-        I->protons = cAN_Ag;
-        break;
-      case 'L':
-      case 'l':
-        I->protons = cAN_Al;
-        break;
-      case 'R':
-      case 'r':
-        I->protons = cAN_Ar;
-        break;
-      case 'S':
-      case 's':
-        I->protons = cAN_As;
-        break;
-      case 'U':
-      case 'u':
-        I->protons = cAN_Au;
-        break;
-      }
-      break;
-    case 'B':
-      switch (e[1]) {
-      case 'A':
-      case 'a':
-        I->protons = cAN_Ba;
-        break;
-      case 'E':
-      case 'e':
-        I->protons = cAN_Be;
-        break;
-      case 'R':
-      case 'r':
-        I->protons = cAN_Br;
-        break;
-      }
-      break;
+    // allow wacky names for C and H
+    switch(symbol[0]) {
     case 'C':
-      switch (e[1]) {
-      case 'A':
-      case 'a':
-        I->protons = cAN_Ca;
-        break;
-      case 'D':
-      case 'd':
-        I->protons = cAN_Cd;
-        break;
-      case 'E':
-      case 'e':
-        I->protons = cAN_Ce;
-        break;
-      case 'L':
-      case 'l':
-        I->protons = cAN_Cl;
-        break;
-      case 'O':
-      case 'o':
-        I->protons = cAN_Co;
-        break;
-      case 'R':
-      case 'r':
-        I->protons = cAN_Cr;
-        break;
-      case 'S':
-      case 's':
-        I->protons = cAN_Cs;
-        break;
-      case 'U':
-      case 'u':
-        I->protons = cAN_Cu;
-        break;
-      default:
-        I->protons = cAN_C;     /* failsafe for wacky carbons */
-        break;
-      }
-      break;
-    case 'F':
-      switch (e[1]) {
-      case 'E':
-      case 'e':
-        I->protons = cAN_Fe;
-        break;
-      }
-      break;
-    case 'G':
-      switch (e[1]) {
-      case 'A':
-      case 'a':
-        I->protons = cAN_Ga;
-        break;
-      case 'E':
-      case 'e':
-        I->protons = cAN_Ge;
-        break;
-      }
-      break;
+      return cAN_C;
     case 'H':
-      switch (e[1]) {
-      case 'G':
-      case 'g':
-        I->protons = cAN_Hg;
-        break;
-      case 'E':
-      case 'e':
-        I->protons = cAN_He;
-        break;
-      default:
-        I->protons = cAN_H;     /* if unrecognized but begins with H, then assume H */
-        break;
-      }
-      break;
-    case 'I':
-      switch (e[1]) {
-      case 'N':
-      case 'n':
-        I->protons = cAN_In;
-        break;
-      }
-      break;
-    case 'K':
-      switch (e[1]) {
-      case 'R':
-      case 'r':
-        I->protons = cAN_Kr;
-        break;
-        break;
-      }
-      break;
-    case 'L':
-      switch (e[1]) {
-      case 'I':
-      case 'i':
-        I->protons = cAN_LP;
-        break;
-        break;
-      case 'P':
-      case 'p':
-        I->protons = cAN_LP;
-        break;
-        break;
-      }
-      break;
-    case 'M':
-      switch (e[1]) {
-      case 'G':
-      case 'g':
-        I->protons = cAN_Mg;
-        break;
-      case 'N':
-      case 'n':
-        I->protons = cAN_Mn;
-        break;
-      }
-      break;
-    case 'N':
-      switch (e[1]) {
-      case 'A':
-      case 'a':
-        I->protons = cAN_Na;
-        break;
-      case 'E':
-      case 'e':
-        I->protons = cAN_Ne;
-        break;
-      case 'I':
-      case 'i':
-        I->protons = cAN_Ni;
-        break;
-      }
-      break;
-    case 'P':
-      switch (e[1]) {
-      case 'B':
-      case 'b':
-        I->protons = cAN_Pb;
-        break;
-      case 'D':
-      case 'd':
-        I->protons = cAN_Pd;
-        break;
-      case 'T':
-      case 't':
-        I->protons = cAN_Pt;
-        break;
-      }
-      break;
-    case 'S':
-      switch (e[1]) {
-      case 'B':
-      case 'b':
-        I->protons = cAN_Sb;
-        break;
-      case 'E':
-      case 'e':
-        I->protons = cAN_Se;
-        break;
-      case 'I':
-      case 'i':
-        I->protons = cAN_Si;
-        break;
-      case 'N':
-      case 'n':
-        I->protons = cAN_Sn;
-        break;
-      case 'R':
-      case 'r':
-        I->protons = cAN_Sr;
-        break;
-      }
-      break;
-    case 'T':
-      switch (e[1]) {
-      case 'I':
-      case 'i':
-        I->protons = cAN_Ti;
-        break;
-      case 'E':
-      case 'e':
-        I->protons = cAN_Te;
-        break;
-      case 'L':
-      case 'l':
-        I->protons = cAN_Tl;
-        break;
-      }
-      break;
-
-    case 'Z':
-      switch (e[1]) {
-      case 'N':
-      case 'n':
-        I->protons = cAN_Zn;
-        break;
-      }
-      break;
-    default:                   /* unrecognized element (possible garbage?) */
-      if(!elem)
-        set_protons(I, I->name);
-      break;
+      return cAN_H;
     }
   }
+
+  return -1;
 }
 
+/*
+ * Assign "protons" from "elem" or "name" property
+ */
+static void set_protons(AtomInfoType * I)
+{
+  int protons = get_protons(I->elem);
+
+  if (protons < 0) {
+    // try again with atom name, skip numbers
+    const char * name = I->name;
+    while((*name >= '0') && (*name <= '9') && (*(name + 1)))
+      name++;
+
+    protons = get_protons(name);
+  }
+
+  I->protons = protons;
+}
+
+/*
+ * Assign (based on name, elem, protons):
+ *  - elem      (if empty string)
+ *  - protons   (if < 1)
+ *  - vdw       (if 0.0)
+ *  - priority
+ */
 void AtomInfoAssignParameters(PyMOLGlobals * G, AtomInfoType * I)
 {
   char *n = NULL, *e = NULL;
   int pri;
-  float vdw;
 
   e = I->elem;
+
+  // elem from protons (except for LP, assume protons=0 if uninitialized)
+  if(!*e && I->protons > 0) {
+    atomicnumber2elem(e, I->protons);
+  }
+
+  // elem from name
   if(!*e) {                     /* try to guess atomic type from name */
     n = I->name;
     while(((*n) >= '0') && ((*n) <= '9') && (*(n + 1)))
@@ -3439,6 +2915,7 @@ void AtomInfoAssignParameters(PyMOLGlobals * G, AtomInfoType * I)
       *(e + 1) = tolower(*(e + 1));
   }
 
+  // priority
   n = I->name;
   while((*n >= '0') && (*n <= '9') && (*(n + 1)))
     n++;
@@ -3738,186 +3215,18 @@ void AtomInfoAssignParameters(PyMOLGlobals * G, AtomInfoType * I)
 
   I->priority = pri;
 
-  e = I->elem;
-  set_protons(I, NULL);
+  // protons from elem or name
+  if (I->protons < 1)
+    set_protons(I);
 
-  /* vdw radii */
-
-  switch (I->protons) {
-
-  case cAN_H:
-    vdw = 1.20F;
-    break;
-    /* NOTE: Rowland and Taylor J. Phys. Chem. 100 (18): 7384-91 suggest
-       1.09 would be more consistent with Hydrogen crystal data */
-
-  case cAN_He:
-    vdw = 1.40F;
-    break;
-
-  case cAN_Li:
-    vdw = 1.82F;
-    break;
-
-  case cAN_B:
-    vdw = 1.85F;
-    break;
-  case cAN_C:
-    vdw = 1.70F;
-    break;
-  case cAN_N:
-    vdw = 1.55F;
-    break;
-  case cAN_O:
-    vdw = 1.52F;
-    break;
-  case cAN_F:
-    vdw = 1.47F;
-    break;
-  case cAN_Ne:
-    vdw = 1.54F;
-    break;
-
-  case cAN_Na:
-    vdw = 2.27F;
-    break;
-  case cAN_Mg:
-    vdw = 1.73F;
-    break;
-  case cAN_Al:
-    vdw = 2.00F;
-    break;
-  case cAN_Si:
-    vdw = 2.10F;
-    break;
-  case cAN_P:
-    vdw = 1.80F;
-    break;
-  case cAN_S:
-    vdw = 1.80F;
-    break;
-  case cAN_Cl:
-    vdw = 1.75F;
-    break;
-  case cAN_Ar:
-    vdw = 1.88F;
-    break;
-
-  case cAN_K:
-    vdw = 2.75F;
-    break;
-
-  case cAN_Mn:
-    vdw = 1.73F;
-    break;
-  case cAN_Ni:
-    vdw = 1.63F;
-    break;
-  case cAN_Cu:
-    vdw = 1.40F;
-    break;
-  case cAN_Zn:
-    vdw = 1.39F;
-    break;
-  case cAN_Ga:
-    vdw = 1.87F;
-    break;
-
-  case cAN_As:
-    vdw = 1.85F;
-    break;
-  case cAN_Se:
-    vdw = 1.90F;
-    break;
-  case cAN_Br:
-    vdw = 1.85F;
-    break;
-  case cAN_Kr:
-    vdw = 2.02F;
-    break;
-
-  case cAN_Pd:
-    vdw = 1.63F;
-    break;
-  case cAN_Ag:
-    vdw = 1.72F;
-    break;
-  case cAN_Cd:
-    vdw = 1.58F;
-    break;
-  case cAN_In:
-    vdw = 1.93F;
-    break;
-  case cAN_Sn:
-    vdw = 2.17F;
-    break;
-
-  case cAN_Te:
-    vdw = 2.06F;
-    break;
-  case cAN_I:
-    vdw = 1.98F;
-    break;
-  case cAN_Xe:
-    vdw = 2.16F;
-    break;
-
-  case cAN_Pt:
-    vdw = 1.75F;
-    break;
-  case cAN_Au:
-    vdw = 1.66F;
-    break;
-  case cAN_Hg:
-    vdw = 1.55F;
-    break;
-  case cAN_Tl:
-    vdw = 1.96F;
-    break;
-  case cAN_Pb:
-    vdw = 2.02F;
-    break;
-
-  case cAN_U:
-    vdw = 1.86F;
-    break;
-
-  case cAN_LP:
-    vdw = 0.5F;
-    break;                      /* lone pairs @ 0.5 same as MOE? */
-
-  default:
-    vdw = 1.80F;
-    break;                      /* default radius for known atoms with unknown radii */
+  // vdw from protons
+  if(I->vdw == 0.0) {
+    if (I->protons > -1 && I->protons < ElementTableSize) {
+      I->vdw = ElementTable[I->protons].vdw;
+    } else {
+      I->vdw = 1.80F;
+    }
   }
-
-  if(SettingGetGlobal_b(G, cSetting_legacy_vdw_radii)) {        /* ver<0.75, old, incorrect VDW */
-    if(!strcmp(e, "N"))
-      vdw = 1.8F;               /* slow but compact */
-    if(!strcmp(e, "C"))
-      vdw = 1.8F;
-    if(!strcmp(e, "Cl"))
-      vdw = 1.8F;
-    if(!strcmp(e, "O"))
-      vdw = 1.5F;
-    if(!strcmp(e, "Br"))
-      vdw = 1.9F;
-    if(!strcmp(e, "I"))
-      vdw = 2.15F;
-    if(!strcmp(e, "S"))
-      vdw = 1.9F;
-    if(!strcmp(e, "P"))
-      vdw = 1.9F;
-    if(!strcmp(e, "F"))
-      vdw = 1.35F;
-    if(!strcmp(e, "H"))
-      vdw = 1.1F;
-  }
-
-  if(I->vdw == 0.0)             /* only assigned if not yet assigned */
-    I->vdw = vdw;
-
-  /*  printf("I->name %s I->priority %d\n",I->name,I->priority); */
 }
 
 int BondTypeCompare(PyMOLGlobals * G, BondType * bt1, BondType * bt2){
@@ -3928,5 +3237,10 @@ int BondTypeCompare(PyMOLGlobals * G, BondType * bt1, BondType * bt2){
 	  bt1->unique_id != bt2->unique_id ||
 	  bt1->stereo != bt2->stereo ||
 	  bt1->has_setting != bt2->has_setting);
+}
+
+void atomicnumber2elem(char * dst, int protons) {
+  if (protons > -1 && protons < ElementTableSize)
+    strncpy(dst, ElementTable[protons].symbol, cElemNameLen);
 }
 

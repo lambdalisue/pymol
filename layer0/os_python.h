@@ -26,6 +26,11 @@ Z* -------------------------------------------------------------------
 typedef int PyObject;
 #undef _PYMOL_NUMPY
 #else
+
+// Python.h will redefine those, undef to avoid compiler warning
+#undef _POSIX_C_SOURCE
+#undef _XOPEN_SOURCE
+
 #include"Python.h"
 #include<pythread.h>
 
@@ -33,6 +38,26 @@ typedef int PyObject;
 #define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
 #include <numpy/arrayobject.h>
 #endif
+
+#include <string.h>
+
+/*
+ * For compatibility with the pickletools, this type represents
+ * an optionally owned C string and has to be returned by value.
+ */
+class SomeString {
+  const char * m_str;
+public:
+  SomeString(const char * s) : m_str(s) {}
+  inline const char * data()    const { return m_str; }
+  inline const char * c_str()   const { return m_str; }
+  operator const char * ()      const { return m_str; } // allows assignment to std::string
+  inline size_t length()        const { return m_str ? strlen(m_str) : 0; }
+};
+
+inline SomeString PyString_AsSomeString(PyObject * o) {
+  return PyString_AsString(o);
+}
 
 #endif
 

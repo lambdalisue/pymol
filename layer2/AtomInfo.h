@@ -19,6 +19,15 @@ Z* -------------------------------------------------------------------
 
 #include"Rep.h"
 #include"Setting.h"
+#include"Version.h"
+
+#if _PyMOL_VERSION_int < 1770
+#define AtomInfoVERSION  176
+#define BondInfoVERSION  176
+#else
+#define AtomInfoVERSION  177
+#define BondInfoVERSION  177
+#endif
 
 
 /* FLAGS 0-3 have the following conventional usage for molecular modeling */
@@ -131,6 +140,7 @@ Z* -------------------------------------------------------------------
 #define cAN_Ca 20
 
 #define cAN_Ti 22
+#define cAN_V  23
 
 #define cAN_Cr 24
 #define cAN_Mn 25
@@ -148,6 +158,7 @@ Z* -------------------------------------------------------------------
 
 #define cAN_Rb 37
 #define cAN_Sr 38
+#define cAN_Y  39
 
 #define cAN_Pd 46
 #define cAN_Ag 47
@@ -180,20 +191,27 @@ typedef char AtomName[cAtomNameLen + 1];
 
 typedef char ElemName[cElemNameLen + 1];
 
+// for customType (not geom)
 #define cAtomInfoNoType -9999
 
 typedef struct BondType {
   int index[2];
-  int order;
   int id;
   int unique_id;
-  int temp1;
-  short int stereo;             /* to preserve 2D rep */
-  short int has_setting;        /* setting based on unique_id */
+#ifdef _PYMOL_IP_EXTRAS
   int oldid;
+#endif
+  signed char order;    // 0-4
+  signed char temp1;    // bool? where used?
+  signed char stereo;   // 0-6 Only for SDF (MOL) format in/out
+  bool has_setting;     /* setting based on unique_id */
 } BondType;
 
 typedef struct AtomInfoType {
+  union {
+    float * anisou;               // only allocate with get_anisou
+    int64_t dummyanisou;
+  };
   int resv;
   int customType;
   int priority;
@@ -211,48 +229,42 @@ typedef struct AtomInfoType {
   int custom;
   int label;
   int visRep;                   /* bitmask for all reps */
+#ifdef _PYMOL_IP_EXTRAS
+  int oldid;                    // for undo
+  int prop_id;
+#endif
+
+  // boolean flags
+  bool hetatm : 1;
+  bool bonded : 1;
+  bool deleteFlag : 1;
+  bool masked : 1;
+  bool hb_donor : 1;
+  bool hb_acceptor : 1;
+  bool has_setting : 1;      /* setting based on unique_id */
 
   /* be careful not to write at these as (int*) */
 
   signed char formalCharge;     // values typically in range -2..+2
-  signed char stereo;           /* for 2D representation */
   signed char mmstereo;           /* from MMStereo */
   signed char cartoon;          /* 0 = default which is auto (use ssType) */
-
-  // boolean flags
-  signed char hetatm;
-  signed char bonded;
-  signed char chemFlag;         // 0,1,2
   signed char geom;             // cAtomInfo*
-
-  signed char valence;
-
-  // boolean flags
-  signed char deleteFlag;
-  signed char masked;
-
-  signed char protekted;        // 0,1,2
-
+  signed char valence;          // 0-4
   signed char protons;          /* atomic number */
 
-  // boolean flags
-  signed char hb_donor;
-  signed char hb_acceptor;
-  signed char has_setting;      /* setting based on unique_id */
+  int chain;
+  SegIdent segi; // 4
+  AtomName name; // 4
+  ElemName elem; // 4               // redundant with "protons" ?
+  ResIdent resi; // 5
+  SSType ssType; // 2               /* blank or 'L' = turn/loop, 'H' = helix, 'S' = beta-strand/sheet */
+  Chain alt; // 2
+  ResName resn;  // 5
 
-  ov_word chain;
-  Chain alt;
-  ResIdent resi;
-  SegIdent segi;
-  ResName resn;
-  AtomName name;
-  ElemName elem;                // redundant with "protons" ?
-
-  SSType ssType;                /* blank or 'L' = turn/loop, 'H' = helix, 'S' = beta-strand/sheet */
-
-  // replace with pointer?
-  float U11, U22, U33, U12, U13, U23;
-  int oldid;
+  // small value optimized bitfields
+  unsigned char stereo : 2;     // 0-3 Only for SDF (MOL) format in/out
+  unsigned char chemFlag : 2;   // 0,1,2
+  unsigned char protekted : 2;  // 0,1,2
 
   // methods
   bool isHydrogen() {
@@ -284,6 +296,13 @@ typedef struct AtomInfoType {
     }
     return false;
   }
+
+  // get the anisou array, allocate if null
+  float * get_anisou() { return (anisou ? anisou : (anisou = new float[6])); }
+
+  // read-only anisou access, no allocation
+  const float * get_anisou() const { return anisou; }
+  bool has_anisou() const { return anisou; }
 } AtomInfoType;
 
 void AtomInfoFree(PyMOLGlobals * G);
@@ -392,5 +411,26 @@ typedef struct {
 } SSEntry;
 
 int BondTypeCompare(PyMOLGlobals * G, BondType * bt1, BondType * bt2);
+
+bool SideChainHelperFilterBond(const int *marked,
+    const AtomInfoType *ati1,
+    const AtomInfoType *ati2,
+    int b1, int b2, int na_mode, int *c1, int *c2);
+
+void atomicnumber2elem(char * dst, int protons);
+
+// atom-level setting
+template <typename V> void SettingSet(PyMOLGlobals * G, int index, V value, AtomInfoType * ai) {
+  AtomInfoCheckUniqueID(G, ai);
+  ai->has_setting = true;
+  SettingUniqueSet(G, ai->unique_id, index, value);
+}
+
+// bond-level setting
+template <typename V> void SettingSet(PyMOLGlobals * G, int index, V value, BondType * b) {
+  AtomInfoCheckUniqueBondID(G, b);
+  b->has_setting = true;
+  SettingUniqueSet(G, b->unique_id, index, value);
+}
 
 #endif

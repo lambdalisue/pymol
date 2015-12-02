@@ -111,22 +111,6 @@ int pymol_roundf(float f)
     return (int) (f - 0.49999F);
 }
 
-double slow_sqrt1f(float f)
-{                               /* no good as a macro because f is used twice */
-  if(f > _0)
-    return (sqrt(f));
-  else
-    return _d0;
-}
-
-double slow_sqrt1d(double f)
-{                               /* no good as a macro because f is used twice */
-  if(f > _0)
-    return (sqrt(f));
-  else
-    return _d0;
-}
-
 void dump3i(const int *v, const char *prefix)
 {                               /* for debugging */
   printf("%s %8i %8i %8i\n", prefix, v[0], v[1], v[2]);
@@ -304,151 +288,6 @@ void copy3f3d(const float *v1, double *v2)
   v2[2] = (double) v1[2];
 }
 
-#ifndef USE_VECTOR_MACROS
-
-void set3f(float *v1, float x, float y, float z)
-{
-  v1[0] = x;
-  v1[1] = y;
-  v1[2] = z;
-}
-
-void swap1f(float *f, float *g)
-{
-  float h;
-  h = *f;
-  *f = *g;
-  *g = h;
-}
-
-void zero3f(float *v1)
-{
-  v1[0] = _0;
-  v1[1] = _0;
-  v1[2] = _0;
-}
-
-void ones3f(float *v1)
-{
-  v1[0] = _1;
-  v1[1] = _1;
-  v1[2] = _1;
-}
-
-float dot_product3f(const float *v1, const float *v2)
-{
-  return (v1[0] * v2[0] + v1[1] * v2[1] + v1[2] * v2[2]);
-}
-
-void copy4f(const float *v1, float *v2)
-{
-  (v2)[0] = (v1)[0];
-  (v2)[1] = (v1)[1];
-  (v2)[2] = (v1)[2];
-  (v2)[3] = (v1)[3];
-}
-
-void invert3f(float *v)
-{
-  v[0] = -v[0];
-  v[1] = -v[1];
-  v[2] = -v[2];
-}
-
-void invert3f3f(const float *v1, float *v2)
-{
-  v2[0] = -v1[0];
-  v2[1] = -v1[1];
-  v2[2] = -v1[2];
-}
-
-void scale3f(const float *v1, const float v0, float *v2)
-{
-  v2[0] = v1[0] * v0;
-  v2[1] = v1[1] * v0;
-  v2[2] = v1[2] * v0;
-}
-
-void copy3uc(const uchar *v1, uchar *v2)
-{
-  v2[0] = v1[0];
-  v2[1] = v1[1];
-  v2[2] = v1[2];
-}
-
-void copy4uc(const uchar *v1, uchar *v2)
-{
-  v2[0] = v1[0];
-  v2[1] = v1[1];
-  v2[2] = v1[2];
-  v2[3] = v1[3];
-}
-
-void copy3f(const float *v1, float *v2)
-{
-  v2[0] = v1[0];
-  v2[1] = v1[1];
-  v2[2] = v1[2];
-}
-
-void copy2f(const float *v1, float *v2)
-{
-  v2[0] = v1[0];
-  v2[1] = v1[1];
-}
-
-void copy3d(const double *v1, double *v2)
-{
-  v2[0] = v1[0];
-  v2[1] = v1[1];
-  v2[2] = v1[2];
-}
-
-void add3f(const float *v1, const float *v2, float *v3)
-{
-  v3[0] = v1[0] + v2[0];
-  v3[1] = v1[1] + v2[1];
-  v3[2] = v1[2] + v2[2];
-}
-
-void subtract3f(const float *v1, const float *v2, float *v3)
-{
-  v3[0] = v1[0] - v2[0];
-  v3[1] = v1[1] - v2[1];
-  v3[2] = v1[2] - v2[2];
-}
-
-void cross_product3f(const float *v1, const float *v2, float *cross)
-{
-  cross[0] = (v1[1] * v2[2]) - (v1[2] * v2[1]);
-  cross[1] = (v1[2] * v2[0]) - (v1[0] * v2[2]);
-  cross[2] = (v1[0] * v2[1]) - (v1[1] * v2[0]);
-}
-
-double lengthsq3f(const float *v1)
-{
-  return ((v1[0] * v1[0]) + (v1[1] * v1[1]) + (v1[2] * v1[2]));
-}
-
-double length3f(const float *v1)
-{
-  return (sqrt1d((v1[0] * v1[0]) + (v1[1] * v1[1]) + (v1[2] * v1[2])));
-}
-
-double length2f(const float *v1)
-{
-  return (sqrt1d((v1[0] * v1[0]) + (v1[1] * v1[1])));
-}
-
-void average3f(const float *v1, const float *v2, float *avg)
-{
-  avg[0] = (v1[0] + v2[0]) / 2.0F;
-  avg[1] = (v1[1] + v2[1]) / 2.0F;
-  avg[2] = (v1[2] + v2[2]) / 2.0F;
-}
-
-#endif
-
 void min3f(const float *v1, const float *v2, float *v3)
 {
   (v3)[0] = ((v1)[0] < (v2)[0] ? (v1)[0] : (v2)[0]);
@@ -461,18 +300,6 @@ void max3f(const float *v1, const float *v2, float *v3)
   (v3)[0] = ((v1)[0] > (v2)[0] ? (v1)[0] : (v2)[0]);
   (v3)[1] = ((v1)[1] > (v2)[1] ? (v1)[1] : (v2)[1]);
   (v3)[2] = ((v1)[2] > (v2)[2] ? (v1)[2] : (v2)[2]);
-}
-
-float slow_project3f(const float *v1, const float *v2, float *proj)
-{
-  float dot;
-
-  dot = v1[0] * v2[0] + v1[1] * v2[1] + v1[2] * v2[2];
-  proj[0] = v2[0] * dot;
-  proj[1] = v2[1] * dot;
-  proj[2] = v2[2] * dot;
-
-  return (dot);
 }
 
 double dot_product3d(const double *v1, const double *v2)
@@ -954,7 +781,7 @@ void initializeTTT44f(float *m)
     m[4 * a + a] = _1;
 }
 
-void combineTTT44f44f(float *m1, float *m2, float *m3)
+void combineTTT44f44f(const float *m1, const float *m2, float *m3)
 
 
 /* WARNING: this routine is ill-conceived and essentially broken */
@@ -965,7 +792,8 @@ void combineTTT44f44f(float *m1, float *m2, float *m3)
 {
   float m1_homo[16];
   float m2_homo[16];
-  float *src, *dst;
+  const float *src;
+  float *dst;
   float pre[3], post[3];
 
   /* convert the existing TTT into a homogenous transformation matrix */
@@ -1112,7 +940,7 @@ void convertR44dTTTf(const double *homo, float *ttt)
   convert44d44f(homo, ttt);
 }
 
-void multiply44d44d44d(double *left, double *right, double *product)
+void multiply44d44d44d(const double *left, const double *right, double *product)
 {
   double rA = right[0];
   double rB = right[4];
@@ -1155,7 +983,7 @@ void multiply44d44d44d(double *left, double *right, double *product)
   product[15] = left[12] * rA + left[13] * rB + left[14] * rC + left[15] * rD;
 }
 
-void left_multiply44d44d(double *left, double *right)
+void left_multiply44d44d(const double *left, double *right)
 {
   double rA = right[0];
   double rB = right[4];
@@ -1198,7 +1026,7 @@ void left_multiply44d44d(double *left, double *right)
   right[15] = left[12] * rA + left[13] * rB + left[14] * rC + left[15] * rD;
 }
 
-void right_multiply44d44d(double *left, double *right)
+void right_multiply44d44d(double *left, const double *right)
 {
   double cA = left[0];
   double cB = left[1];
@@ -1242,7 +1070,7 @@ void right_multiply44d44d(double *left, double *right)
 
 }
 
-void multiply44f44f44f(float *left, float *right, float *product)
+void multiply44f44f44f(const float *left, const float *right, float *product)
 {
   float rA = right[0];
   float rB = right[4];
@@ -1285,7 +1113,7 @@ void multiply44f44f44f(float *left, float *right, float *product)
   product[15] = left[12] * rA + left[13] * rB + left[14] * rC + left[15] * rD;
 }
 
-void left_multiply44f44f(float *left, float *right)
+void left_multiply44f44f(const float *left, float *right)
 {
   float rA = right[0];
   float rB = right[4];
@@ -1328,7 +1156,7 @@ void left_multiply44f44f(float *left, float *right)
   right[15] = left[12] * rA + left[13] * rB + left[14] * rC + left[15] * rD;
 }
 
-void right_multiply44f44f(float *left, float *right)
+void right_multiply44f44f(float *left, const float *right)
 {
   float cA = left[0];
   float cB = left[1];
@@ -1601,7 +1429,7 @@ void invert_rotation_only44d44d(const double *orig, double *inv)
 
 }
 
-void transformTTT44f3f(float *m1, float *m2, float *m3)
+void transformTTT44f3f(const float *m1, const float *m2, float *m3)
 {
   float m2r0 = m2[0] + m1[12];
   float m2r1 = m2[1] + m1[13];
@@ -1611,7 +1439,7 @@ void transformTTT44f3f(float *m1, float *m2, float *m3)
   m3[2] = m1[8] * m2r0 + m1[9] * m2r1 + m1[10] * m2r2 + m1[11];
 }
 
-void transform_normalTTT44f3f(float *m1, float *m2, float *m3)
+void transform_normalTTT44f3f(const float *m1, const float *m2, float *m3)
 {
   float m2r0 = m2[0];
   float m2r1 = m2[1];
@@ -1691,7 +1519,7 @@ void get_rotation_about3f3fTTTf(float angle, const float *dir, const float *orig
   ttt[15] = 1.0F;
 }
 
-void rotation_to_matrix33f(float *axis, float angle, Matrix33f mat)
+void rotation_to_matrix33f(const float *axis, float angle, Matrix33f mat)
 {
   rotation_matrix3f(angle, axis[0], axis[1], axis[2], &mat[0][0]);
 }
@@ -1830,19 +1658,6 @@ void clamp3f(float *v1)
     v1[2] = _1;
 }
 
-void slow_normalize3f(float *v1)
-{
-  double vlen = length3f(v1);
-  if(vlen > R_SMALL) {
-    float inV = (float) (_1 / vlen);
-    v1[0] *= inV;
-    v1[1] *= inV;
-    v1[2] *= inV;
-  } else {
-    v1[0] = v1[1] = v1[2] = _0;
-  }
-}
-
 void normalize3d(double *v1)
 {
   double vlen;
@@ -1861,87 +1676,6 @@ void normalize3d(double *v1)
 double length3d(double *v1)
 {
   return (sqrt1d((v1[0] * v1[0]) + (v1[1] * v1[1]) + (v1[2] * v1[2])));
-}
-
-double slow_diff3f(const float *v1, const float *v2)
-{
-  float dx, dy, dz;
-  dx = (v1[0] - v2[0]);
-  dy = (v1[1] - v2[1]);
-  dz = (v1[2] - v2[2]);
-  return (sqrt1d(dx * dx + dy * dy + dz * dz));
-}
-
-float slow_diffsq3f(const float *v1, const float *v2)
-{
-  float dx, dy, dz;
-  dx = (v1[0] - v2[0]);
-  dy = (v1[1] - v2[1]);
-  dz = (v1[2] - v2[2]);
-
-  return (dx * dx + dy * dy + dz * dz);
-
-}
-
-int slow_within3f(float *v1, float *v2, float dist)
-{
-  float dx, dy, dz;
-  dx = (v1[0] - v2[0]);
-  if(fabs(dx) > dist)
-    return (false);
-  dy = (v1[1] - v2[1]);
-  if(fabs(dy) > dist)
-    return (false);
-  dz = (v1[2] - v2[2]);
-  if(fabs(dz) > dist)
-    return (false);
-  return ((dx * dx + dy * dy + dz * dz) <= (dist * dist));
-}
-
-int slow_within3fsq(float *v1, float *v2, float dist, float dist2)
-{
-  float dx, dy, dz;
-  dx = (v1[0] - v2[0]);
-  if(fabs(dx) > dist)
-    return (false);
-  dy = (v1[1] - v2[1]);
-  if(fabs(dy) > dist)
-    return (false);
-  dz = (v1[2] - v2[2]);
-  if(fabs(dz) > dist)
-    return (false);
-  return ((dx * dx + dy * dy + dz * dz) <= (dist2));
-}
-
-int slow_within3fret(float *v1, float *v2, float cutoff, float cutoff2, float *diff,
-                     float *dist)
-{
-  float dx, dy, dz, dist2;
-  dx = (float) fabs((diff[0] = v1[0] - v2[0]));
-  dy = (float) fabs((diff[1] = v1[1] - v2[1]));
-  if(dx > cutoff)
-    return 0;
-  dz = (float) fabs((diff[2] = v1[2] - v2[2]));
-  dx = dx * dx;
-  if(dy > cutoff)
-    return 0;
-  dy = dy * dy;
-  if(dz > cutoff)
-    return 0;
-  if((dist2 = ((dx + dy) + dz * dz)) > cutoff2)
-    return 0;
-  *dist = (float) sqrt1f(dist2);
-  return 1;
-}
-
-void slow_remove_component3f(const float *v1, const float *unit, float *result)
-{
-  float dot;
-
-  dot = v1[0] * unit[0] + v1[1] * unit[1] + v1[2] * unit[2];
-  result[0] = v1[0] - unit[0] * dot;
-  result[1] = v1[1] - unit[1] * dot;
-  result[2] = v1[2] - unit[2] * dot;
 }
 
 double distance_line2point3f(const float *base, const float *normal, const float *point,
@@ -2343,4 +2077,17 @@ float smooth(float x, float power)
   if(x >= 1.0F)
     return 1.0F;
   return 1.0F - (0.5F * powf(2.0F * (1.0F - x), power));
+}
+
+/* Divides the unit circle radially into n segments with n >= 3. */
+void subdivide(int n, float *x, float *y)
+{
+  int a;
+  if(n < 3) {
+    n = 3;
+  }
+  for(a = 0; a <= n; a++) {
+    x[a] = (float) cos(a * 2 * PI / n);
+    y[a] = (float) sin(a * 2 * PI / n);
+  }
 }

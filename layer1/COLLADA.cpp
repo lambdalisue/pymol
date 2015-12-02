@@ -59,21 +59,6 @@ static char *GetTimestamp(){
   return strdup(buffer);
 }
 
-
-/* Divides the unit circle radially into n segments with n >= 3. */
-static void subdivide(int n, float *x, float *y)
-{
-  int a;
-  if(n < 3) {
-    n = 3;
-  }
-  for(a = 0; a <= n; a++) {
-    x[a] = (float) cos(a * 2 * PI / n);
-    y[a] = (float) sin(a * 2 * PI / n);
-  }
-}
-
-
 /*
  * Returns index of the first float in an array matching the given value to
  * the given precision.
@@ -128,6 +113,8 @@ static void ColladaWriteAssetElement(xmlTextWriterPtr w)
 
   xmlTextWriterWriteElement(w, BAD_CAST "created", BAD_CAST ts);
   xmlTextWriterWriteElement(w, BAD_CAST "modified", BAD_CAST ts);
+  free(ts);
+
   xmlTextWriterStartElement(w, BAD_CAST "unit");
   xmlTextWriterWriteAttribute(w, BAD_CAST "meter", BAD_CAST "1e-10");
   xmlTextWriterWriteAttribute(w, BAD_CAST "name", BAD_CAST "Angstrom");

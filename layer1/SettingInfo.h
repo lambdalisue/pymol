@@ -73,6 +73,9 @@ const static struct {
 #define cSetting_pqr_workarounds        cSetting_pqr_no_chain_id
 #define cSetting_ray_shadows            cSetting_ray_shadow
 
+// for min/max
+#define MAX_SPHERE_QUALITY 4 /* NUMBER_OF_SPHERE_LEVELS-1 */
+
 enum {
 #endif
 
@@ -122,7 +125,7 @@ enum {
   REC_b(  43, line_smooth                             , global    , 1 ),
   REC_f(  44, line_width                              , bond      , 1.49F ),    /* under 1.5F to retain SGI antialiasing */
   REC_b(  45, half_bonds                              , ostate    , 0 ),
-  REC_i(  46, stick_quality                           , ostate    , 8 ),
+  REC_i(  46, stick_quality                           , ostate    , 8, 3, 100 ), /* no actual max */
   REC_f(  47, stick_overlap                           , ostate    , 0.2F ),
   REC_f(  48, stick_nub                               , ostate    , 0.7F ),
   REC_b(  49, all_states                              , object    , 0 ),
@@ -163,7 +166,7 @@ enum {
   REC_b(  84, depth_cue                               , global    , 1 ),
   REC_f(  85, specular                                , global    , 1.0F ),
   REC_f(  86, shininess                               , global    , 55.0F ),
-  REC_i(  87, sphere_quality                          , ostate    , 1 ),
+  REC_i(  87, sphere_quality                          , ostate    , 1, 0, MAX_SPHERE_QUALITY ),
   REC_f(  88, fog                                     , global    , 1.0F ),
   REC_b(  89, isomesh_auto_state                      , global    , 0 ),
   REC_f(  90, mesh_width                              , ostate    , 1.0F ),
@@ -202,7 +205,7 @@ enum {
   REC_i( 123, cartoon_refine                          , ostate    , 5 ),
   REC_i( 124, cartoon_refine_tips                     , ostate    , 10 ),
   REC_b( 125, cartoon_discrete_colors                 , ostate    , 0 ),
-  REC_b( 126, normalize_ccp4_maps                     , global    , 1 ),
+  REC_i( 126, normalize_ccp4_maps                     , global    , 1 ),
   REC_f( 127, surface_poor                            , ostate    , 0.85F ),
   REC_i( 128, internal_feedback                       , global    , 1 ),
   REC_f( 129, cgo_line_width                          , ostate    , 1.00F ),
@@ -254,7 +257,7 @@ enum {
   REC_i( 174, sculpt_field_mask                       , ostate    , 0x1FF ),
   REC_f( 175, sculpt_hb_overlap                       , ostate    , 1.0F ),
   REC_f( 176, sculpt_hb_overlap_base                  , ostate    , 0.35F ),
-  REC_b( 177, legacy_vdw_radii                        , global    , 0 ),
+  REC_b( 177, legacy_vdw_radii                        , unused    , 0 ),
   REC_b( 178, sculpt_memory                           , ostate    , 1 ),
   REC_i( 179, connect_mode                            , global    , 0 ),
   REC_b( 180, cartoon_cylindrical_helices             , ostate    , 0 ),
@@ -265,15 +268,15 @@ enum {
   REC_i( 185, fit_iterations                          , global    , 1000 ),
   REC_f( 186, fit_tolerance                           , global    , 0.0000001F ),
   REC_s( 187, batch_prefix                            , global    , "tmp_pymol" ),
-  REC_i( 188, stereo_mode                             , global    , 2 ),        /* crosseye by default */
-  REC_i( 189, cgo_sphere_quality                      , global    , 1 ),
+  REC_i( 188, stereo_mode                             , global    , 2, 1, 12 ),        /* crosseye by default */
+  REC_i( 189, cgo_sphere_quality                      , global    , 1, 0, MAX_SPHERE_QUALITY ),
   REC_b( 190, pdb_literal_names                       , global    , 0 ),
   REC_b( 191, wrap_output                             , global    , 0 ),
   REC_f( 192, fog_start                               , global    , 0.45F ),
   REC_i( 193, state                                   , object    , 1 ),
   REC_i( 194, frame                                   , global    , 1 ),
   REC_b( 195, ray_shadow                              , global    , 1 ),
-  REC_i( 196, ribbon_trace_atoms                      , ostate    , 0 ),
+  REC_i( 196, ribbon_trace_atoms                      , atom      , 0 ),
   REC_i( 197, security                                , global    , 1 ),
   REC_f( 198, stick_transparency                      , bond      , 0.0F ),
   REC_b( 199, ray_transparency_shadows                , global    , 1 ),
@@ -346,7 +349,7 @@ enum {
   REC_i( 266, retain_order                            , object    , 0 ),
   REC_i( 267, pdb_hetatm_sort                         , object    , 0 ),
   REC_i( 268, pdb_use_ter_records                     , global    , 1 ),
-  REC_i( 269, cartoon_trace_atoms                     , ostate    , 0 ),
+  REC_i( 269, cartoon_trace_atoms                     , atom      , 0 ),
   REC_i( 270, ray_oversample_cutoff                   , global    , 120 ),
   /* note that this setting is ad-hoc and calibrated such that a
      gaussian_resolution of 2.0 returns maps with the straight atomic
@@ -501,7 +504,7 @@ enum {
   REC_f( 411, scene_animation_duration                , global    , 2.25F ),
   REC_s( 412, wildcard                                , object    , "*" ),
   REC_s( 413, atom_name_wildcard                      , object    , "" ),
-  REC_b( 414, ignore_case                             , global    , 1 ),
+  REC_b( 414, ignore_case                             , global    , 0 ), // new default in 1.7.7
   REC_b( 415, presentation_auto_quit                  , global    , 1 ),
   REC_b( 416, editor_auto_dihedral                    , global    , 1 ),
   REC_b( 417, presentation_auto_start                 , global    , 1 ),
@@ -690,8 +693,8 @@ enum {
   REC_i( 595, mesh_grid_max                           , ostate    , 80 ),
   REC_i( 596, session_cache_optimize                  , global    , 0 ),
   REC_f( 597, sdof_drag_scale                         , global    , 0.5F ),
-  REC_i( 598, scene_buttons_mode                      , global    , 1 ),
-  REC_b( 599, scene_buttons                           , global    , 0 ),
+  REC_i( 598, scene_buttons_mode                      , unused    , 1 ),
+  REC_b( 599, scene_buttons                           , global    , 1 ),
   REC_b( 600, map_auto_expand_sym                     , object    , 1 ),
   REC_b( 601, image_copy_always                       , global    , 0 ),
   REC_i( 602, max_ups                                 , global    , 0 ),
@@ -781,10 +784,10 @@ enum {
   REC_b( 686, nonbonded_as_cylinders                  , global    , 0 ),
   REC_b( 687, cylinders_shader_filter_faces           , unused    , 1 ),
   REC_f( 688, nb_spheres_size                         , ostate    , 0.25f ),
-  REC_i( 689, nb_spheres_quality                      , ostate    , 1 ),
-  REC_i( 690, nb_spheres_use_shader                   , global    , 1 ),
+  REC_i( 689, nb_spheres_quality                      , ostate    , 1, 0, MAX_SPHERE_QUALITY ),
+  REC_i( 690, nb_spheres_use_shader                   , global    , 1, 0, 2 ),
   REC_b( 691, render_as_cylinders                     , global    , 1 ),
-  REC_b( 692, alignment_as_cylinders                  , global    , 1 ),
+  REC_b( 692, alignment_as_cylinders                  , global    , 0 ),
   /* 0 - none, 1 - just ladder, 2 - just strand, 3 - both ladder and strand */
   REC_i( 693, cartoon_nucleic_acid_as_cylinders       , global    , 1, 0, 3 ),
   REC_b( 694, cgo_shader_ub_flags                     , global    , 0 ),
@@ -848,6 +851,10 @@ enum {
   REC_b( 743, precomputed_lighting                    , global    , 0 ),
   REC_b( 744, chromadepth                             , global    , 0 ),
   REC_f( 745, pse_export_version                      , global    , 0.f ),
+  REC_b( 746, cif_use_auth                            , global    , 1 ),
+  REC_s( 747, assembly                                , global    , "" ),
+  REC_b( 748, cif_keepinmemory                        , global    , 0 ),
+  REC_b( 749, pse_binary_dump                         , unused    , 0 ), // not fully supported in Open-Source PyMOL
 
 #ifdef SETTINGINFO_IMPLEMENTATION
 #undef SETTINGINFO_IMPLEMENTATION

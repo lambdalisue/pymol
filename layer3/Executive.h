@@ -97,14 +97,19 @@ Z* -------------------------------------------------------------------
 #define cLoadTypeCMS 63
 #define cLoadTypePlugin 64
 
+#define cLoadTypeMAE 65
+#define cLoadTypeMAEStr 66
+#define cLoadTypePDBQT 67
+
 /* NOTE: if you add new content/object type above, then be sure to add
-   corresponding code in: CmdLoad ExecutiveGetExistingCompatible
+   corresponding code in:
+   ExecutiveGetExistingCompatible
    ExecutiveLoad
 */
 
 typedef struct {
   ObjectMolecule *obj;
-  int offset;
+  int atm;
 } ExecutiveObjectOffset;
 
 class SpecRec;
@@ -162,20 +167,19 @@ int ExecutiveGetAtomVertex(PyMOLGlobals * G, const char *s1, int state, int inde
 int ExecutiveProcessPDBFile(PyMOLGlobals * G, CObject * origObj,
                             const char *fname, const char *buffer, const char *oname,
                             int frame, int discrete, int finish, OrthoLineType buf,
-                            bool is_pqr_file, int quiet,
+                            int variant, int quiet,
                             int multiplex, int zoom);
 
-int ExecutiveGetUniqueIDObjectOffsetVLADict(PyMOLGlobals * G,
-                                            ExecutiveObjectOffset ** vla,
-                                            OVOneToOne ** dict);
+const ExecutiveObjectOffset * ExecutiveUniqueIDAtomDictGet(PyMOLGlobals * G, int i);
+void ExecutiveUniqueIDAtomDictInvalidate(PyMOLGlobals * G);
 
-int ExecutiveLoad(PyMOLGlobals * G, CObject * origObj,
+int ExecutiveLoad(PyMOLGlobals * G,
                   const char *content, int content_length,
                   int content_format,
                   const char *object_name,
                   int state, int zoom,
                   int discrete, int finish, int multiplex, int quiet, const char *plugin,
-		  short loadpropertiesall=false, OVLexicon *loadproplex=NULL);
+                  const char * object_props=NULL, const char * atom_props=NULL);
 
 int ExecutiveDebug(PyMOLGlobals * G, const char *name);
 
@@ -405,8 +409,8 @@ int ExecutiveIdentifyObjects(PyMOLGlobals * G, const char *s1, int mode, int **i
 int ExecutiveTranslateObjectTTT(PyMOLGlobals * G, const char *name, float *trans, int store, int quiet);
 int ExecutiveCombineObjectTTT(PyMOLGlobals * G, const char *name, float *ttt,
                               int reverse_order, int store);
-int ExecutiveSetObjectTTT(PyMOLGlobals * G, const char *name, float *ttt, int state, int quiet, int store);
-int ExecutiveGetObjectTTT(PyMOLGlobals * G, const char *name, float **ttt, int state,
+int ExecutiveSetObjectTTT(PyMOLGlobals * G, const char *name, const float *ttt, int state, int quiet, int store);
+int ExecutiveGetObjectTTT(PyMOLGlobals * G, const char *name, const float **ttt, int state,
                           int quiet);
 int ExecutiveGetObjectMatrix(PyMOLGlobals * G, const char *name, int state, double **matrix,
                              int incl_ttt);

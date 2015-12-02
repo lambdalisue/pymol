@@ -1,4 +1,5 @@
 
+import os
 import cmd
 import types
 from pymol import _cmd
@@ -326,6 +327,41 @@ def file_read(finfo, _self=cmd):
 
     return contents
 
+def download_chem_comp(resn, quiet=1, _self=cmd):
+    '''
+    WARNING: internal routine, subject to change
+
+    Download the chemical components CIF for the given residue name
+    and return its local filename, or an empty string on failure.
+    '''
+    filename = os.path.join(_self.get('fetch_path'), resn + ".cif")
+    if os.path.exists(filename):
+        return filename
+
+    url = "ftp://ftp.ebi.ac.uk/pub/databases/msd/pdbechem/files/mmcif/" + resn + ".cif"
+    if not quiet:
+        print ' Downloading', url
+
+    try:
+        contents = _self.file_read(url)
+        if not contents: raise
+    except:
+        print ' Error: Download failed'
+        return ''
+
+    try:
+        with open(filename, 'w') as handle:
+            handle.write(contents)
+    except IOError as e:
+        print e
+        print 'Your "fetch_path" setting might point to a read-only directory'
+        return ''
+
+    if not quiet:
+        print '  ->', filename
+
+    return filename
+
 def _load(oname,finfo,state,ftype,finish,discrete,
           quiet=1,multiplex=0,zoom=-1,mimic=1,
           plugin='',
@@ -344,6 +380,7 @@ def _load(oname,finfo,state,ftype,finish,discrete,
                 r = _cmd.load_object(_self._COb,str(oname),obj,int(state)-1,loadable.cgo,
                                       int(finish),int(discrete),int(quiet),
                                       int(zoom))
+                _self.set("two_sided_lighting", 0, str(oname))
             else:
                 print "Load-Error: Unable to open file '%s'."%finfo
         elif ftype == loadable.cc1: # ChemDraw 3D
@@ -588,10 +625,10 @@ def _validate_color_sc(_self=cmd):
     # WARNING: internal routine, subject to change
     if _self.color_sc == None: # update color shortcuts if needed
         lst = _self.get_color_indices()
-        lst.extend([('default',-1),('auto',-2),('current',-3),('atomic',-4)])
-        _self.color_sc = Shortcut(map(lambda x:x[0],lst))
-        color_dict = {}
-        for a in lst: color_dict[a[0]]=a[1]
+        names = [x[0] for x in lst]
+        names.extend(['default', 'auto', 'current', 'atomic'])
+        names.extend(_self.get_names_of_type('object:ramp'))
+        _self.color_sc = Shortcut(names)
 
 def _invalidate_color_sc(_self=cmd):
     # WARNING: internal routine, subject to change

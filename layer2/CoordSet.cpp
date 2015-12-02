@@ -19,6 +19,8 @@ Z* -------------------------------------------------------------------
 #include"os_predef.h"
 #include"os_std.h"
 
+#include <algorithm>
+
 #include"Base.h"
 #include"OOMac.h"
 #include"MemoryDebug.h"
@@ -121,7 +123,6 @@ int CoordSetFromPyList(PyMOLGlobals * G, PyObject * list, CoordSet ** cs)
   return 0;
 #else
   CoordSet *I = NULL;
-  PyObject *tmp;
   int ok = true;
   int ll = 0;
 
@@ -154,11 +155,6 @@ int CoordSetFromPyList(PyMOLGlobals * G, PyObject * list, CoordSet ** cs)
       ok = PConvPyListToFloatVLA(PyList_GetItem(list, 2), &I->Coord);
     if(ok)
       ok = PConvPyListToIntVLA(PyList_GetItem(list, 3), &I->IdxToAtm);
-    if(ok) {
-      tmp = PyList_GetItem(list, 4);    /* Discrete CSets don't have this */
-      if(tmp != Py_None)
-        ok = PConvPyListToIntVLA(tmp, &I->AtmToIdx);
-    }
     if(ok && (ll > 5))
       ok = PConvPyStrToStr(PyList_GetItem(list, 5), I->Name, sizeof(WordType));
     if(ok && (ll > 6))
@@ -229,14 +225,17 @@ PyObject *CoordSetAsPyList(CoordSet * I)
   PyObject *result = NULL;
 
   if(I) {
+    int pse_export_version = SettingGetGlobal_f(I->State.G, cSetting_pse_export_version) * 1000;
+    bool dump_binary = SettingGetGlobal_b(I->State.G, cSetting_pse_binary_dump) && (!pse_export_version || pse_export_version >= 1765);
     result = PyList_New(9);
-
     PyList_SetItem(result, 0, PyInt_FromLong(I->NIndex));
     PyList_SetItem(result, 1, PyInt_FromLong(I->NAtIndex));
-    PyList_SetItem(result, 2, PConvFloatArrayToPyList(I->Coord, I->NIndex * 3));
-    PyList_SetItem(result, 3, PConvIntArrayToPyList(I->IdxToAtm, I->NIndex));
-    if(I->AtmToIdx)
-      PyList_SetItem(result, 4, PConvIntArrayToPyList(I->AtmToIdx, I->NAtIndex));
+    PyList_SetItem(result, 2, PConvFloatArrayToPyList(I->Coord, I->NIndex * 3, dump_binary));
+    PyList_SetItem(result, 3, PConvIntArrayToPyList(I->IdxToAtm, I->NIndex, dump_binary));
+    if(I->AtmToIdx
+        && pse_export_version > 0
+        && pse_export_version < 1770)
+      PyList_SetItem(result, 4, PConvIntArrayToPyList(I->AtmToIdx, I->NAtIndex, dump_binary));
     else
       PyList_SetItem(result, 4, PConvAutoNone(NULL));
     PyList_SetItem(result, 5, PyString_FromString(I->Name));
@@ -960,7 +959,7 @@ void CoordSetAtomToPDBStrVLA(PyMOLGlobals * G, char **charVLA, int *c,
 
   name[4] = 0;
 
-  if((!pdb_info) || (!pdb_info->is_pqr_file)) { /* relying upon short-circuit */
+  if((!pdb_info) || (!pdb_info->is_pqr_file())) { /* relying upon short-circuit */
     short linelen;
     sprintf(x, "%8.3f", v[0]);
     x[8] = 0;
@@ -974,12 +973,13 @@ void CoordSetAtomToPDBStrVLA(PyMOLGlobals * G, char **charVLA, int *c,
               cnt + 1, name, ai->alt, resn, LexStr(G, ai->chain), resi, x, y, z, ai->q, ai->b,
               ignore_pdb_segi ? "" :
               ai->segi, ai->elem, formalCharge);
-    if(ai->U11 || ai->U22 || ai->U33 || ai->U12 || ai->U13 || ai->U23) {
-      // Warning: anisotropic temperature factors are not rotated with the object matrix
+    if(ai->anisou) {
       // Columns 7 - 27 and 73 - 80 are identical to the corresponding ATOM/HETATM record.
       char *atomline = (*charVLA) + (*c);
       char *anisoline = atomline + linelen;
-      float anisou[6] = { ai->U11, ai->U22, ai->U33, ai->U12, ai->U13, ai->U23 };
+      float anisou[6];
+      memcpy(anisou, ai->anisou, 6 * sizeof(float));
+
       if(matrix && !RotateU(matrix, anisou)) {
         PRINTFB(G, FB_CoordSet, FB_Errors) "RotateU failed\n" ENDFB(G);
         return;
@@ -996,7 +996,7 @@ void CoordSetAtomToPDBStrVLA(PyMOLGlobals * G, char **charVLA, int *c,
     (*c) += linelen;
   } else {
     Chain alt;
-    if(pdb_info->is_pqr_file && pdb_info->pqr_workarounds) {
+    if(pdb_info->is_pqr_file() && pdb_info->pqr_workarounds) {
       int non_num = false;
       char *p = resi;
       while(*p) {
@@ -1056,9 +1056,11 @@ PyObject *CoordSetAtomToChemPyAtom(PyMOLGlobals * G, AtomInfoType * ai, const fl
   if(!atom)
     ErrMessage(G, "CoordSetAtomToChemPyAtom", "can't create atom");
   else {
-    float tmp_array[6] = { ai->U11, ai->U22, ai->U33, ai->U12, ai->U13, ai->U23 };
+    float tmp_array[6] = { 0.f, 0.f, 0.f, 0.f, 0.f, 0.f };
 
-    if(matrix) {
+    if (ai->anisou) {
+      memcpy(tmp_array, ai->anisou, 6 * sizeof(float));
+      if (matrix)
       RotateU(matrix, tmp_array);
     }
 
@@ -1093,23 +1095,8 @@ PyObject *CoordSetAtomToChemPyAtom(PyMOLGlobals * G, AtomInfoType * ai, const fl
     PConvIntToPyObjAttr(atom, "formal_charge", ai->formalCharge);
     if(ai->customType != -9999)
       PConvIntToPyObjAttr(atom, "numeric_type", ai->customType);
-    if(ai->textType) {
-      char null_st[1] = "";
-      char *st = null_st;
-
-      if(ai->textType)
-        st = OVLexicon_FetchCString(G->Lexicon, ai->textType);
-      PConvStringToPyObjAttr(atom, "text_type", st);
-    }
-
-    if(ai->custom) {
-      char null_st[1] = "";
-      char *st = null_st;
-
-      if(ai->custom)
-        st = OVLexicon_FetchCString(G->Lexicon, ai->custom);
-      PConvStringToPyObjAttr(atom, "custom", st);
-    }
+    PConvStringToPyObjAttr(atom, "text_type", LexStr(G, ai->textType));
+    PConvStringToPyObjAttr(atom, "custom", LexStr(G, ai->custom));
 
     PConvIntToPyObjAttr(atom, "hetatm", ai->hetatm);
     PConvIntToPyObjAttr(atom, "flags", ai->flags);
@@ -1604,7 +1591,6 @@ CoordSet *CoordSetCopy(const CoordSet * cs)
   I->RefPos     = VLACopy2(cs->RefPos);
   I->AtmToIdx   = VLACopy2(cs->AtmToIdx);
   I->IdxToAtm   = VLACopy2(cs->IdxToAtm);
-  I->MatrixVLA  = VLACopy2(cs->MatrixVLA);
 
   UtilZeroMem(I->Rep, sizeof(::Rep *) * cRepCnt);
 
@@ -1624,20 +1610,7 @@ int CoordSet::extendIndices(int nAtom)
   ObjectMolecule *obj = I->Obj;
   int ok = true;
   if(obj->DiscreteFlag) {
-    if(obj->NDiscrete < nAtom) {
-      VLASize(obj->DiscreteAtmToIdx, int, nAtom);
-      CHECKOK(ok, obj->DiscreteAtmToIdx);
-      if (ok)
-	VLASize(obj->DiscreteCSet, CoordSet *, nAtom);
-      CHECKOK(ok, obj->DiscreteCSet);
-      if (ok){
-	for(a = obj->NDiscrete; a < nAtom; a++) {
-	  obj->DiscreteAtmToIdx[a] = -1;
-	  obj->DiscreteCSet[a] = NULL;
-	}
-	obj->NDiscrete = nAtom;
-      }
-    }
+    ok = obj->setNDiscrete(nAtom);
 
     if(I->AtmToIdx) {           /* convert to discrete if necessary */
       VLAFree(I->AtmToIdx);

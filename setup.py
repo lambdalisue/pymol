@@ -15,37 +15,8 @@ from glob import glob
 import shutil
 import sys, os, re
 
-import distutils.ccompiler
 import multiprocessing.pool
-
-def CCompiler_compile(self, sources, output_dir=None, macros=None,
-        include_dirs=None, debug=0, extra_preargs=None, extra_postargs=None,
-        depends=None):
-    '''
-    Enable parallel and incremental build.
-
-    To do a clean build, please remove the "build" directory.
-    '''
-    macros, objects, extra_postargs, pp_opts, build = self._setup_compile(
-            output_dir, macros, include_dirs, sources, depends, extra_postargs)
-    cc_args = self._get_cc_args(pp_opts, debug, extra_preargs)
-
-    def _single_compile(obj):
-        try:
-            src, ext = build[obj]
-        except KeyError:
-            return
-        try:
-            if not self.force and \
-                    os.path.getmtime(obj) > \
-                    os.path.getmtime(src):
-                return
-        except OSError:
-            pass
-        self._compile(obj, src, ext, cc_args, extra_postargs, pp_opts)
-
-    pmap(_single_compile, objects)
-    return objects
+import monkeypatch_distutils
 
 # handle extra arguments
 class options:
@@ -63,9 +34,8 @@ try:
 except ImportError:
     print "argparse not available"
 
-pmap = map if options.jobs == 1 else multiprocessing.pool.ThreadPool(options.jobs or None).map
-
-distutils.ccompiler.CCompiler.compile = CCompiler_compile
+if options.jobs != 1:
+    monkeypatch_distutils.pmap = multiprocessing.pool.ThreadPool(options.jobs or None).map
 
 def posix_find_lib(names, lib_dirs):
     # http://stackoverflow.com/questions/1376184/determine-if-c-library-is-installed-on-unix
@@ -240,6 +210,16 @@ else: # unix style (linux, mac, ...)
     def_macros += [
             ("_PYMOL_FREETYPE",None),
             ("NO_MMLIBS",None),
+            ]
+
+    if sys.platform == 'darwin':
+        import platform
+        if int(platform.mac_ver()[0].split('.')[1]) < 9:
+            # OS X <= 10.8, will still use some C++11 features
+            # like the "auto" keyword, but excludes features which
+            # depend on the C++11 std library.
+            def_macros += [
+                ('_PYMOL_NO_CXX11', None),
             ]
 
     try:

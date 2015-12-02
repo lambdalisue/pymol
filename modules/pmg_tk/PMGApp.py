@@ -36,9 +36,11 @@ try:
         import pymol
 
         exc_type, exc_value, exc_traceback = sys.exc_info()
-
-        if issubclass(exc_type, (pymol.CmdException, pymol.cmd.QuietException)):
-            tkMessageBox.showerror(getattr(exc_value, 'label', 'Error'), str(exc_value).strip())
+        msg = "Sorry this command was not successful at this time"
+        if issubclass(exc_type, (pymol.cmd.QuietException)):
+            tkMessageBox.showerror('Error', msg)
+        elif issubclass(exc_type, (pymol.CmdException)):
+            tkMessageBox.showerror(getattr(exc_value, 'label', 'Error'), str(exc_value.message).strip() or msg)
         else:
             _reporterror.orig(func, args)
 
@@ -123,6 +125,11 @@ class PMGApp(Pmw.MegaWidget):
                 ("All Readable","*.mtz"),                 
                 ("All Readable","*.vis"),
                 ("All Readable","*.psf"),
+                ("All Readable","*.pdbml"),
+                ("All Readable","*.xml"),
+                ("All Readable","*.xml.gz"),
+                ("All Readable","*.pdbqt"),
+                ("All Readable","*.cml"),
                 ("All Readable","*.top"),
                 ("All Readable","*.prmtop"),
                 ("All Readable","*.crd"),
@@ -167,6 +174,11 @@ class PMGApp(Pmw.MegaWidget):
                 ("CLUSTAL file","*.aln"),
                 ("ACNT Map","*.acnt"),                 
                 ("Protein Structure File","*.psf"),
+                ("PDBML","*.pdbml"),
+                ("PDBML","*.xml"),
+                ("PDBML","*.xml.gz"),
+                ("PDBQT","*.pdbqt"),
+                ("Chemical Markup Language","*.cml"),
                 ("AMBER Topology File","*.top"),
                 ("AMBER Topology File","*.prmtop"),
                 ("AMBER Coordinate File","*.crd"),

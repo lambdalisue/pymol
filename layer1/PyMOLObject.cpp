@@ -614,11 +614,21 @@ void ObjectMakeValidName(char *name)
   if(p) {
     /* currently legal are A to Z, a to z, 0 to 9, -, _, + */
     while(*p) {
-      if((*p < 43) || (*p > 122) ||
-         ((*p > 57) && (*p < 65)) ||
-         ((*p > 90) && (*p < 94)) || (*p == 44) || (*p == 47) || (*p == 60))
+      switch (*p) {
+        case '+':
+        case '-':
+        case '.':
+        case '^':
+        case '_':
+          break;
+        default:
+          if (('A' <= *p && *p <= 'Z') ||
+              ('a' <= *p && *p <= 'z') ||
+              ('0' <= *p && *p <= '9'))
+            break;
         /* must be an ASCII-visible character */
         *p = 1;                 /* placeholder for non-printable */
+      }
       p++;
     }
     /* eliminate sequential and terminal nonprintables */
@@ -654,25 +664,19 @@ void ObjectMakeValidName(char *name)
 
 int ObjectGetCurrentState(CObject * I, int ignore_all_states)
 {
-  int state = -2;
-  int objState;
+  // the previous implementation (up to PyMOL 1.7.6) ignored
+  // object-level state=0 (all states)
 
-  /* Get the settings for this object; returns T/F and sets objState */
-  if(SettingGetIfDefined_i(I->G, I->Setting, cSetting_state, &objState)) {
-    if(objState > 0) {          /* a specific state */
-      state = objState - 1;
-    }
-    if(objState < 0) {
-      state = -1;               /* all states */
-    }
-  }
-  /* if that setting didn't exist on the object, get global */
-  if(state == -2) {             /* default -- use global state */
-    state = SettingGetGlobal_i(I->G, cSetting_state) - 1;
-  }
-  if(!(ignore_all_states) && (state >= 0))
-    if(SettingGet_i(I->G, I->Setting, NULL, cSetting_all_states))
-      state = -1;
+  if (!ignore_all_states &&
+      SettingGet_b(I->G, I->Setting, NULL, cSetting_all_states))
+    return -1;
+
+  if (I->getNFrame() == 1 &&
+      SettingGet_b(I->G, I->Setting, NULL, cSetting_static_singletons))
+    return 0;
+
+  int state = SettingGet_i(I->G, I->Setting, NULL, cSetting_state) - 1;
+
   if(state < -1)
     state = -1;
   return (state);
@@ -876,7 +880,7 @@ void ObjectTranslateTTT(CObject * I, float *v, int store)
 
 
 /*========================================================================*/
-void ObjectSetTTT(CObject * I, float *ttt, int state, int store)
+void ObjectSetTTT(CObject * I, const float *ttt, int state, int store)
 {
   if(state < 0) {
     if(ttt) {
@@ -906,7 +910,7 @@ void ObjectSetTTT(CObject * I, float *ttt, int state, int store)
 }
 
 /*========================================================================*/
-int ObjectGetTTT(CObject * I, float **ttt, int state)
+int ObjectGetTTT(CObject * I, const float **ttt, int state)
 {
   if(state < 0) {
     if(I->TTTFlag) {

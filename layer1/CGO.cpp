@@ -171,7 +171,6 @@ typedef CGO_op *CGO_op_fn;
 
 static float *CGO_add(CGO * I, int c);
 static float *CGO_size(CGO * I, int sz);
-static void subdivide(int n, float *x, float *y);
 static int CGOSimpleCylinder(CGO * I, float *v1, float *v2, float tube_size, float *c1,
 			     float *c2, int cap1, int cap2);
 static int CGOSimpleEllipsoid(CGO * I, float *v, float vdw, float *n0, float *n1,
@@ -431,8 +430,9 @@ void CGOFreeWithoutVBOs(CGO * I){
   CGOFreeImpl(I, 0);
 }
 
-void CGOFree(CGO * I){
+void CGOFree(CGO * &I){
   CGOFreeImpl(I, 1);
+  I = NULL;
 }
 
 void CGOFreeImpl(CGO * I, short withVBOs)
@@ -5028,7 +5028,13 @@ CGO *CGOSimplify(CGO * I, int est)
 	  pc = origpc + 1;
 	  notHaveValue = damode;
 	  end = 0;
+	  bool skiptoend = false;
 	  while(!err && !end && (op = (CGO_MASK & CGO_read_int(pc)))) {
+	    if (skiptoend && op!=CGO_END){
+	      sz = CGO_sz[op];
+	      pc += sz;
+	      continue;
+	    }
 	    switch (op) {
 	    case CGO_NORMAL:
 	      normalVals[pl] = pc[0]; normalVals[pl+1] = pc[1]; normalVals[pl+2] = pc[2];
@@ -5061,6 +5067,8 @@ CGO *CGOSimplify(CGO * I, int est)
 	      vertexVals[pl++] = pc[0]; vertexVals[pl++] = pc[1]; vertexVals[pl++] = pc[2];
 	      plc += 4;
 	      pla++;
+	      if (pla >= nverts) // anything past the last vertex is ignored
+		skiptoend = true;
 	      notHaveValue = damode;
 	      break;
 	    case CGO_END:
@@ -8063,18 +8071,6 @@ static int CGOSimpleEllipsoid(CGO * I, float *v, float vdw, float *n0, float *n1
     s++;
   }
   return ok;
-}
-
-static void subdivide(int n, float *x, float *y)
-{
-  int a;
-  if(n < 3) {
-    n = 3;
-  }
-  for(a = 0; a <= n; a++) {
-    x[a] = (float) cos(a * 2 * PI / n);
-    y[a] = (float) sin(a * 2 * PI / n);
-  }
 }
 
 static int CGOSimpleCylinder(CGO * I, float *v1, float *v2, float tube_size, float *c1,

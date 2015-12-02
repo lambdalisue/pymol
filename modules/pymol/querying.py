@@ -139,6 +139,25 @@ DESCRIPTION
         if _raising(r,_self): raise pymol.CmdException
         return r
 
+    def get_object_ttt(object, quiet=1, _self=cmd):
+        '''
+DESCRIPTION
+
+    "get_object_ttt" is an unsupported command
+        '''
+        quiet = int(quiet)
+        with _self.lockcm:
+            r = _cmd.get_object_ttt(_self._COb, str(object), -1, quiet)
+        if not quiet:
+            if r is None:
+                print 'TTT is None'
+            else:
+                for i in range(4):
+                    if i == 3:
+                        print 'TTT ---------------------------+---------'
+                    print 'TTT %8.2f %8.2f %8.2f | %8.2f' % tuple(r[i * 4:i * 4 + 4])
+        return r
+
     def get_object_list(selection="(all)", quiet=1, _self=cmd):
         '''
         
@@ -548,7 +567,7 @@ PYMOL API
         if _raising(r,_self): raise pymol.CmdException
         return r
 
-    def get_idtf(_self=cmd):
+    def get_idtf(quiet=1, _self=cmd):
         '''
 DESCRIPTION
 
@@ -567,6 +586,12 @@ PYMOL API
         finally:
             _self.unlock(r,_self)
         if _raising(r,_self): raise pymol.CmdException
+
+        if not quiet:
+            fov = _self.get_setting_float("field_of_view")
+            dist = _self.get_view()[11]
+            print " 3Daac=%3.1f, 3Droll=0, 3Dc2c=0 0 1, 3Droo=%1.2f, 3Dcoo=0 0 %1.2f" % (fov, -dist, dist)
+
         return r
 
     def get_mtl_obj(_self=cmd):
@@ -886,7 +911,7 @@ DESCRIPTION
 
         return r
 
-    def get_phipsi(selection="(name ca)",state=-1,_self=cmd):
+    def get_phipsi(selection="(name CA)",state=-1,_self=cmd):
         # preprocess selections
         selection = selector.process(selection)
         #   
@@ -1129,7 +1154,23 @@ PYMOL API
 
     def get_area(selection="(all)",state=1,load_b=0,quiet=1,_self=cmd):
         '''
-        PRE-RELEASE functionality - API will change
+DESCRIPTION
+
+    Get the surface area of an selection. Depends on the "dot_solvent"
+    setting. With "dot_solvent=off" (default) it calculates the solvent
+    excluded surface area, else the surface accessible surface.
+
+USAGE
+
+    get_area [ selection [, state [, load_b ]]]
+
+ARGUMENTS
+
+    load_b = bool: store per-atom surface area in b-factors {default: 0}
+
+SEE ALSO
+
+    "dot_solvent" setting, "dots" representation (show dots)
         '''
         # preprocess selection
         selection = selector.process(selection)
@@ -1148,9 +1189,19 @@ PYMOL API
 
     def get_chains(selection="(all)",state=0,quiet=1,_self=cmd):
         '''
-        PRE-RELEASE functionality - API will change
+DESCRIPTION
 
-        state is currently ignored
+    Print the list of chain identifiers in the given selection.
+
+USAGE
+
+    get_chains [ selection [, state ]]
+
+ARGUMENTS
+
+    selection = str: atom selection {default: all}
+
+    state = int: CURRENTLY IGNORED
         '''
         # preprocess selection
         selection = selector.process(selection)
@@ -1495,12 +1546,7 @@ DESCRIPTION
 
 USAGE
 
-    count_atoms (selection)
-
-PYMOL API
-
-    cmd.count_atoms(string selection)
-
+    count_atoms [ selection [, quiet [, state ]]]
         '''
         r = DEFAULT_ERROR
         # preprocess selection
@@ -1521,6 +1567,10 @@ PYMOL API
 DESCRIPTION
 
     Count the number of discrete objects in selection.
+
+USAGE
+
+    count_discrete selection
         '''
         with _self.lockcm:
             r = _cmd.count_discrete(_self._COb, str(selection))
@@ -1577,29 +1627,29 @@ PYMOL API
         if _raising(r,_self): raise pymol.CmdException
         return r
 
-    def get_object_state(name):
+    def get_object_state(name, _self=cmd):
         '''
 DESCRIPTION
 
     Returns the effective object state.
         '''
-        states = cmd.count_states('%' + name)
-        if states < 2 and cmd.get_setting_boolean('static_singletons'):
+        states = _self.count_states('%' + name)
+        if states < 2 and _self.get_setting_boolean('static_singletons'):
             return 1
-        state = cmd.get_setting_int('state', name)
+        state = _self.get_setting_int('state', name)
         if state > states:
             raise pymol.CmdException('Invalid state %d for object %s' % (state, name))
         return state
 
-    def get_selection_state(selection):
+    def get_selection_state(selection, _self=cmd):
         '''
 DESCRIPTION
 
     Returns the effective object state for all objects in given selection.
     Raises exception if objects are in different states.
         '''
-        state_set = set(map(get_object_state,
-            cmd.get_object_list('(' + selection + ')')))
+        state_set = set(map(_self.get_object_state,
+            _self.get_object_list('(' + selection + ')')))
         if len(state_set) != 1:
             if len(state_set) == 0:
                 return 1
@@ -1656,3 +1706,36 @@ SEE ALSO
             print ' Center of Mass: [%8.3f,%8.3f,%8.3f]' % tuple(com)
         return com
 
+    def cif_get_array(name, key, dtype="s", quiet=1, _self=cmd):
+        '''
+DESCRIPTION
+
+    EXPERIMENTAL AND SUBJECT TO CHANGE!
+
+ARGUMENTS
+
+    name = string: object name
+
+    key = CIF data item name in lower case
+
+    dtype = str: "s" (str), "i" (int) or "f" (float)
+        '''
+        with _self.lockcm:
+            r = _cmd.cif_get_array(_self._COb, name, key, dtype)
+        if r and not int(quiet):
+            n = len(r)
+            r_print = r if n < 10 else (r[:9] + ['... (%d more items)' % (n - 9)])
+            print " %s:" % (key), ', '.join(map(str, r_print))
+        return r
+
+    def get_assembly_ids(name, quiet=1, _self=cmd):
+        '''
+DESCRIPTION
+
+    EXPERIMENTAL AND SUBJECT TO CHANGE!
+    Get the list of assembly ids for an object loaded from mmCIF.
+        '''
+        r = cif_get_array(name, "_pdbx_struct_assembly.id", _self=_self)
+        if r and not int(quiet):
+            print " Assembly IDs:", ', '.join(r)
+        return r

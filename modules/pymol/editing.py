@@ -70,8 +70,16 @@ DESCRIPTION
         '''
 DESCRIPTION
 
-    "sculpt_deactivate" is an unsupported feature.
+    "sculpt_deactivate" deactivates sculpting for the given object and
+    clears the stored restraints.
 
+ARGUMENTS
+
+    object = str: name of a single object or "all"
+
+SEE ALSO
+
+    sculpt_activate
     '''
         r = 0
         try:
@@ -87,8 +95,19 @@ DESCRIPTION
         '''
 DESCRIPTION
 
-    "sculpt_deactivate" is an unsupported feature.
+    "sculpt_activate" enables sculpting for the given object. The current
+    geometry (bond lengths, angles, etc.) of the given state is remembered as
+    the reference geometry.
 
+ARGUMENTS
+
+    object = str: name of a single object or "all"
+
+    state = int: object state or 0 for current state {default: 0}
+
+SEE ALSO
+
+    sculpt_iterate, sculpt_deactivate
     '''
         r = DEFAULT_ERROR
         try:
@@ -124,41 +143,72 @@ SEE ALSO
     join_states
         '''
         r = DEFAULT_SUCCESS
-        object = str(object)
-        if prefix==None:
-            prefix = object+"_"
-            prefix_set = 0
-        else:
-            prefix_set = 1
+        prefix_set = bool(prefix)
         first=int(first)
         last=int(last)
-        n_state = _self.count_states(object)
-        if n_state<0:
-            r = DEFAULT_ERROR
-        else:
-            if last<1:
-                last = n_state
-            for a in range(first,last+1):
-                try:
+        prefix_a = first - 1
+
+        # support selections, not only objects
+        sele = _self.get_unused_name('_sele_Abnqh5s5VS')
+        _self.select(sele, object, 0)
+
+        # all names to check for name conflicts
+        names = set(_self.get_names('all'))
+
+        # iterate over objects
+        for object in _self.get_object_list(sele):
+            olast = _self.count_states('%' + object)
+
+            if 0 < last < olast:
+                olast = last
+
+            for a in range(first, olast + 1):
+                name = None
+                if prefix_set:
+                    prefix_a += 1
+                else:
+                    prefix_a = a
+                    prefix = object + "_"
                     name = _self.get_title(object,a)
-                    if (len(name)==0) or prefix_set:
-                        name = prefix+"%04d"%a
-                except:
-                    name = prefix+"%04d"%a
-                r = _self.frame(a)
+
+                if not name:
+                    name = prefix + "%04d" % prefix_a
+                elif name in names:
+                    name = _self.get_unused_name(name)
+                names.add(name)
+
+                r = _self.create(name, "?%s & ?%s" % (sele, object), a, 1)
+
                 if is_error(r): 
                     break
-                r = _self.create(name,"(%s) and state %d"%(object,a),a,1)
-                if is_error(r): 
-                    break
+
+        _self.delete(sele)
         if _self._raising(r,_self): raise pymol.CmdException            
         return r
      
     def sculpt_iterate(object, state=0, cycles=10, _self=cmd):
         '''
-        
-    "sculpt_iterate" is an unsupported feature.
-    
+DESCRIPTION
+
+    "sculpt_iterate" performs a simple energy minimization of atomic
+    coordinates based on the geometry restraints which were defined with
+    the "sculpt_activate" invocation and which are selected in the
+    "sculpt_field_mask" setting. Sculpting currently supports local
+    geometry restraints and vdw repulsion, but no solvation or
+    electrostatic effects.
+
+ARGUMENTS
+
+    object = str: name of a single object or "all"
+
+    state = int: object state or 0 for current state {default: 0}
+
+    cycles = int: number of iterations {default: 10}
+
+SEE ALSO
+
+    commands: sculpt_activate, sculpt_deactivate
+    settings: "sculpting" setting, all "sculpt_*" settings
     '''
         r = DEFAULT_ERROR
         try:
@@ -478,6 +528,7 @@ SEE ALSO
 
     order_dict = {
     # simulation 
+        '0'         : 0,
         '1'         : 1,
         '2'         : 2,
         '3'         : 3,
@@ -500,7 +551,7 @@ DESCRIPTION
     
 USAGE
 
-    valence 2, (name c), (name o)
+    valence 2, (name C), (name O)
 
 PYMOL API
 
@@ -576,8 +627,7 @@ SEE ALSO
         try:
             _self.lock(_self)
             r = _cmd.bond(_self._COb,
-                          "("+atom1+")",
-                          "("+atom2+")",
+                          atom1, atom2,
                           int(order),1,int(quiet))
         finally:
             _self.unlock(r,_self)
@@ -647,8 +697,7 @@ SEE ALSO
         try:
             _self.lock(_self)
             r = _cmd.bond(_self._COb,
-                          "("+atom1+")",
-                          "("+atom2+")",
+                          atom1, atom2,
                           0,0,int(quiet))
         finally:
             _self.unlock(r,_self)
@@ -811,7 +860,20 @@ DESCRIPTION
 
 USAGE
 
-    fuse [ selection1 [, selection2 ]]
+    fuse [ selection1 [, selection2 [, mode [, recolor [, move ]]]]]
+
+ARGUMENTS
+
+    selection1 = str: single atom selection (will be copied to object 2)
+
+    selection2 = str: single atom selection
+
+    mode = int: {default: 0}
+      3: don't move and don't create a bond, just combine into single object
+
+    recolor = bool: recolor C atoms to match target {default: 1}
+
+    move = bool: {default: 1}
 
 NOTES
 
@@ -819,10 +881,6 @@ NOTES
     The atoms can both be hydrogens, in which case they are
     eliminated, or they can both be non-hydrogens, in which
     case a bond is formed between the two atoms.
-
-PYMOL API
-
-    cmd.fuse(string selection1, string selection2)
 
 SEE ALSO
 
@@ -1171,7 +1229,7 @@ SEE ALSO
             raise pymol.CmdException
         try:
             if h_fill: # strip off existing hydrogens
-                remove("((neighbor pk1) and elem h)",quiet=quiet)
+                remove("((neighbor pk1) and elem H)",quiet=quiet)
             _self.lock(_self)
             r = _cmd.replace(_self._COb,str(element),int(geometry),int(valence),str(name),quiet)
         finally:
@@ -1319,6 +1377,9 @@ SEE ALSO
 
     alter_state, iterate, iterate_state, sort
         '''
+        if not expression:
+            raise pymol.CmdException('missing expression')
+
         if space == None:
             space = _self._pymol.__dict__
         r = DEFAULT_ERROR
@@ -1384,6 +1445,8 @@ SEE ALSO
 
     iterate_state, alter, alter_state
         '''
+        if not expression:
+            raise pymol.CmdException('missing expression')
 
         if space == None:
             space = _self._pymol.__dict__
@@ -1430,6 +1493,9 @@ SEE ALSO
 
     iterate_state, alter, iterate
         '''
+        if not expression:
+            raise pymol.CmdException('missing expression')
+
         if space == None:
             space = _self._pymol.__dict__
         r = DEFAULT_ERROR
@@ -1470,6 +1536,9 @@ SEE ALSO
 
     iterate, alter, alter_state
         '''
+        if not expression:
+            raise pymol.CmdException('missing expression')
+
         r = DEFAULT_ERROR
         if space == None:
             space = _self._pymol.__dict__
@@ -1525,7 +1594,7 @@ PYMOL API
 
 EXAMPLES
 
-    translate [1,0,0], name ca
+    translate [1,0,0], name CA
 
 NOTES
 

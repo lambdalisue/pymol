@@ -64,6 +64,7 @@ Z* -------------------------------------------------------------------
 #include "IncentiveCopyToClipboard.h"
 #endif
 
+#include <algorithm>
 #include <iostream>
 
 using namespace std;
@@ -642,6 +643,7 @@ void SceneInvalidate(PyMOLGlobals * G)
 {
   SceneInvalidateCopy(G, false);
   SceneDirty(G);
+  PyMOL_NeedRedisplay(G->PyMOL);
 }
 
 void SceneLoadAnimation(PyMOLGlobals * G, double duration, int hand)
@@ -802,14 +804,7 @@ char *SceneGetSeleModeKeyword(PyMOLGlobals * G)
   return (char *) SelModeKW[0];
 }
 
-static void SceneCopy(PyMOLGlobals * G, GLenum buffer, int force, int entire_window);
-
-unsigned int SceneFindTriplet(PyMOLGlobals * G, int x, int y, GLenum gl_buffer);
-unsigned int *SceneReadTriplets(PyMOLGlobals * G, int x, int y, int w, int h,
-                                GLenum gl_buffer);
-
 void SceneDraw(Block * block ORTHOCGOARG);
-void ScenePrepareMatrix(PyMOLGlobals * G, int mode);
 
 void SceneToViewElem(PyMOLGlobals * G, CViewElem * elem, const char *scene_name)
 {
@@ -1509,7 +1504,7 @@ void SceneClip(PyMOLGlobals * G, int plane, float movement, const char *sele, in
     {
       double avg = (I->Front / 2.0) + (I->Back / 2.0);
       double width_half = I->Back - avg;
-      double new_w_half = fmin(movement * width_half,
+      double new_w_half = std::min(movement * width_half,
           width_half + 1000.0); // prevent exploding of clipping planes
 
       SceneClipSet(G, avg - new_w_half, avg + new_w_half);
@@ -3407,8 +3402,7 @@ void SceneDraw(Block * block ORTHOCGOARG) /* returns true if scene was drawn (us
 
     drawn = SceneDrawImageOverlay(G ORTHOCGOARGVAR);
 
-    if(SettingGetGlobal_b(G, cSetting_scene_buttons) &&
-       (SettingGetGlobal_i(G, cSetting_scene_buttons_mode) == 1)) {
+    if(SettingGetGlobal_b(G, cSetting_scene_buttons)) {
       SceneDrawButtons(block, true ORTHOCGOARGVAR);
     } else {
       I->ButtonMargin = 0;
@@ -5838,7 +5832,7 @@ static int SceneDrag(Block * block, int x, int y, int mod, double when)
           {
             // the 5.0 min depth below is an empirical value
             float factor = SettingGetGlobal_f(G, cSetting_mouse_z_scale) *
-              (y - I->LastY) / 400.0 * fmax(5.f, -I->Pos[2]);
+              (y - I->LastY) / 400.0 * std::max(5.f, -I->Pos[2]);
             if(!SettingGetGlobal_b(G, cSetting_legacy_mouse_zoom))
               factor = -factor;
             I->Pos[2] += factor;
@@ -6254,6 +6248,15 @@ int SceneInit(PyMOLGlobals * G)
   if(I) {
 
     /* all defaults to zero, so only initialize non-zero elements */
+
+    // pointers don't necessarily get initialized on windows (PYMOL-2561)
+    I->Image = NULL;
+    I->View = NULL;
+    I->AlphaCGO = NULL;
+    I->SlotVLA = NULL;
+    I->ReinterpolateFlag = false;
+    I->ReinterpolateObj = NULL;
+    I->MotionGrabbedObj = NULL;
 
     G->DebugCGO = CGONew(G);
 
@@ -7416,7 +7419,7 @@ void SceneRay(PyMOLGlobals * G,
 
 
 /*========================================================================*/
-static void SceneCopy(PyMOLGlobals * G, GLenum buffer, int force, int entire_window)
+void SceneCopy(PyMOLGlobals * G, GLenum buffer, int force, int entire_window)
 {
   CScene *I = G->Scene;
   unsigned int buffer_size;
@@ -9078,7 +9081,7 @@ void SceneRender(PyMOLGlobals * G, Picking * pick, int x, int y,
       float fov = SettingGetGlobal_f(G, cSetting_field_of_view);
       gluPerspective(fov, aspRat, I->FrontSafe, I->BackSafe);
     } else {
-      height = fmax(R_SMALL4, -I->Pos[2]) * GetFovWidth(G) / 2.f;
+      height = std::max(R_SMALL4, -I->Pos[2]) * GetFovWidth(G) / 2.f;
       width = height * aspRat;
 
       GLORTHO(-width, width, -height, height, I->FrontSafe, I->BackSafe);

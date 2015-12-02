@@ -16,6 +16,7 @@
 
 #include "CifFile.h"
 #include "File.h"
+#include "MemoryDebug.h"
 
 // basic IO and string handling
 
@@ -122,6 +123,13 @@ double cif_array::as_d(int row, double d) const {
   return s ? scifloat(s) : d;
 }
 
+// templated getters
+template <> const char* cif_array::as<const char* >(int row) const { return as_s(row); }
+template <> std::string cif_array::as<std::string >(int row) const { return as_s(row); }
+template <> int         cif_array::as<int         >(int row) const { return as_i(row); }
+template <> double      cif_array::as<double      >(int row) const { return as_d(row); }
+template <> float       cif_array::as<float       >(int row) const { return as_d(row); }
+
 /*
  * Get a pointer to array or NULL if not found
  *
@@ -131,30 +139,26 @@ double cif_array::as_d(int row, double d) const {
  * (key="_foo.bar", alias1="_foo_bar")
  */
 const cif_array * cif_data::get_arr(const char * key, const char * alias1, const char * alias2) const {
-  std::string tmp1, tmp2;
   const char * p;
+  const char * aliases[] = {alias1, alias2, NULL};
+  m_str_cifarray_t::const_iterator it;
 
-  // support alias shortcut: '?' matches '.' and '_'
-  if (!alias1 && (p = strchr(key, '?'))) {
-    int i = p - key;
-
-    // '.' version
-    tmp1 = key;
-    tmp1[i] = '.';
-    key = tmp1.c_str();
-
-    // '_' version
-    tmp2 = key;
-    tmp2[i] = '_';
-    alias1 = tmp2.c_str();
+  for (int j = 0; key; key = aliases[j++]) {
+    // support alias shortcut: '?' matches '.' and '_'
+    if ((p = strchr(key, '?'))) {
+      std::string tmp(key);
+      for (const char * d = "._"; *d; ++d) {
+        // replace '?' by '.' or '_'
+        tmp[p - key] = *d;
+        if ((it = dict.find(tmp.c_str())) != dict.end())
+          return &it->second;
+      }
+    } else {
+      if ((it = dict.find(key)) != dict.end())
+        return &it->second;
+    }
   }
 
-  // dict lookup, return first hit
-  m_str_cifarray_t::const_iterator arr, end = dict.end();
-  if ((arr = dict.find(key)) != end ||
-      (alias1 && (arr = dict.find(alias1)) != end) ||
-      (alias2 && (arr = dict.find(alias2)) != end))
-    return &arr->second;
   return NULL;
 }
 
@@ -169,7 +173,7 @@ const cif_array * cif_data::get_opt(const char * key, const char * alias1, const
 // constructor
 cif_file::cif_file(const char* filename, const char* contents_) {
   if (contents_) {
-    contents = strdup(contents_);
+    contents = mstrdup(contents_);
   } else {
     contents = FileGetContents(filename, NULL);
     if (!contents)
@@ -187,7 +191,7 @@ cif_file::~cif_file() {
     delete it->second;
 
   if (contents)
-    free(contents);
+    mfree(contents);
 }
 
 // destructor
@@ -247,7 +251,7 @@ bool cif_file::parse() {
     }
   }
 
-  cif_data *current_data = NULL, *current_frame = NULL;
+  cif_data *current_data = NULL, *current_frame = NULL, *global_block = NULL;
 
   // parse into dictionary
   for (unsigned int i = 0, n = tokens.size(); i < n; i++) {
@@ -308,6 +312,10 @@ bool cif_file::parse() {
       const char * key(tokens[i] + 5);
       datablocks[key] = current_data = current_frame = new cif_data;
 
+    } else if (strncasecmp("global_", tokens[i], 5) == 0) {
+      // STAR feature, not supported in CIF
+      global_block = current_data = current_frame = new cif_data;
+
     } else if (strncasecmp("save_", tokens[i], 5) == 0) {
       if (tokens[i][5]) {
         // begin
@@ -322,6 +330,9 @@ bool cif_file::parse() {
       break;
     }
   }
+
+  if (global_block)
+    delete global_block;
 
   return true;
 }

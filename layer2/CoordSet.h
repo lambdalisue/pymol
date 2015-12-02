@@ -39,6 +39,16 @@ typedef struct CoordSet {
   void invalidateRep(int type, int level);
   int atmToIdx(int atm);
 
+  // read/write pointer to coordinate
+  float * coordPtr(int idx) {
+    return Coord + idx * 3;
+  }
+
+  // read pointer to coordinate
+  const float * coordPtr(int idx) const {
+    return Coord + idx * 3;
+  }
+
   AtomInfoType * getAtomInfo(int idx) {
     return Obj->AtomInfo + IdxToAtm[idx];
   }
@@ -76,8 +86,6 @@ typedef struct CoordSet {
   int PeriodicBoxType;
   int tmp_index;                /* for saving */
 
-  int NMatrix;                  /* number of matrices for this coordinate set */
-  double *MatrixVLA;            /* end-to-end array of 16x16 matrices */
   LabPosType *LabPos;
 
   /* not saved in state */
@@ -160,5 +168,10 @@ void CoordSetUpdateThread(CCoordSetUpdateThreadInfo * T);
 
 void LabPosTypeCopy(const LabPosType * src, LabPosType * dst);
 void RefPosTypeCopy(const RefPosType * src, RefPosType * dst);
+
+// object-state level setting
+template <typename V> void SettingSet(int index, V value, CoordSet *cs) {
+  SettingSet(cs->State.G, &cs->Setting, index, value);
+}
 
 #endif

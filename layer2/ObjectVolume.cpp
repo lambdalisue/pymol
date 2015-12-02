@@ -14,6 +14,9 @@ I* Additional authors of this source file include:
 -*
 Z* -------------------------------------------------------------------
 */
+
+#include <algorithm>
+
 #include"os_python.h"
 
 #include"os_predef.h"
@@ -744,7 +747,8 @@ static void ObjectVolumeRender(ObjectVolume * I, RenderInfo * info)
   GLint alpha_func;
   GLfloat alpha_ref;
   float tex_corner[24];
-  float *corner, *ttt;
+  float *corner;
+  const float *ttt;
   float zaxis[3];
   float points[36], tex_coords[36];
   int n_points;
@@ -903,7 +907,7 @@ static void ObjectVolumeRender(ObjectVolume * I, RenderInfo * info)
       // determine number of slices based on max extent
       // and slice option
       sliceRange = 0.5*sqrt(2.0) * 
-        fmax(fmax(fabs(corner[21]-corner[0]), fabs(corner[22]-corner[1])), 
+        std::max(std::max(fabs(corner[21]-corner[0]), fabs(corner[22]-corner[1])), 
             fabs(corner[23]-corner[2]));
       sliceDelta = (sliceRange / volume_layers);
 
@@ -955,6 +959,12 @@ static void ObjectVolumeRender(ObjectVolume * I, RenderInfo * info)
       glGetFloatv(GL_ALPHA_TEST_REF, &alpha_ref);
       glAlphaFunc(GL_ALWAYS, 0.0);
 
+      // don't write to the depth buffer
+      GLboolean depth_writemask;
+      glGetBooleanv(GL_DEPTH_WRITEMASK, &depth_writemask);
+      if (depth_writemask)
+        glDepthMask(GL_FALSE);
+
       // This is setting used for PyMOL, but just to be on a safe side
       // we set glBlendFunct explicitely here
       glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -986,6 +996,8 @@ static void ObjectVolumeRender(ObjectVolume * I, RenderInfo * info)
       CShaderPrg_Disable(shaderPrg);
 
       // restore
+      if (depth_writemask)
+        glDepthMask(GL_TRUE);
       glAlphaFunc(alpha_func, alpha_ref);
     }
 
@@ -1280,7 +1292,7 @@ void ObjectVolumeRecomputeExtent(ObjectVolume * I)
   I->Obj.ExtentFlag = extent_flag;
 
   if(I->Obj.TTTFlag && I->Obj.ExtentFlag) {
-    float *ttt;
+    const float *ttt;
     double tttd[16];
     if(ObjectGetTTT(&I->Obj, &ttt, -1)) {
       convertTTTfR44d(ttt, tttd);

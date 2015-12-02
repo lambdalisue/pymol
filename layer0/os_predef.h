@@ -53,6 +53,11 @@ typedef float aliased_float;
 #define __inline__ __inline
 #endif
 
+#ifdef WIN32
+#define PATH_SEP "\\"
+#else
+#define PATH_SEP "/"
+#endif
 
 
 /* commercial product */
@@ -109,8 +114,6 @@ typedef float aliased_float;
 #endif
 
 #if defined(_WIN32) || defined(_WIN64)
-#define fmax max
-#define fmin min
 #pragma warning (disable:4996)
 #ifndef snprintf
 #define snprintf sprintf_s
@@ -118,5 +121,8 @@ typedef float aliased_float;
 #endif
 
 #include "ov_types.h"
+
+// alternative to std::swap if references are not allowed (e.g. bit fields)
+#define SWAP_NOREF(a, b) {auto _t=(a);(a)=(b);(b)=_t;}
 
 #endif

@@ -95,16 +95,10 @@ int DistSetMoveWithObject(DistSet * I, struct ObjectMolecule *obj)
 
   int i, N, rVal = 0;
   CMeasureInfo * memb = NULL;
-  ExecutiveObjectOffset *eoo = NULL;
-  OVOneToOne *id2eoo = NULL;
-  OVreturn_word offset;
   float * varDst;
 
   PRINTFD(G, FB_DistSet)
     " DistSet: adjusting distance vertex\n" ENDFD;
-
-  ok_assert(1, I);
-  ok_assert(1, ExecutiveGetUniqueIDObjectOffsetVLADict(G, &eoo, &id2eoo));
 
   for(memb = I->MeasureInfo; memb; memb = memb->next) {
     varDst = NULL;
@@ -133,15 +127,14 @@ int DistSetMoveWithObject(DistSet * I, struct ObjectMolecule *obj)
     varDst += 3 * memb->offset;
 
     for(i = 0; i < N; i++) {
-      if(!OVreturn_IS_OK(offset = OVOneToOne_GetForward(id2eoo, memb->id[i])))
-        continue;
+      auto eoo = ExecutiveUniqueIDAtomDictGet(G, memb->id[i]);
 
-      if(obj && obj != eoo[offset.word].obj)
+      if(!eoo || (obj && obj != eoo->obj))
         continue;
 
       if(ObjectMoleculeGetAtomVertex(
-            eoo[offset.word].obj, memb->state[i],
-            eoo[offset.word].offset, varDst + i * 3))
+            eoo->obj, memb->state[i],
+            eoo->atm, varDst + i * 3))
         rVal++;
     }
   }
@@ -153,8 +146,6 @@ int DistSetMoveWithObject(DistSet * I, struct ObjectMolecule *obj)
     " DistSet: done updating distance set's vertex\n" ENDFD;
 
 ok_except1:
-  OVOneToOne_DEL_AUTO_NULL(id2eoo);
-  VLAFreeP(eoo);
   return rVal;
 }
 
@@ -186,6 +177,10 @@ static CMeasureInfo * MeasureInfoListFromPyList(PyMOLGlobals * G, PyObject * lis
       CPythonVal_PConvPyListToIntArrayInPlace(G, tmp, item->id, N);
       CPythonVal_PConvPyListToIntArrayInPlace_From_List(G, val, 2, item->state, N);
       CPythonVal_Free(tmp);
+
+      for (int j = 0; j < N; ++j) {
+        item->id[j] = SettingUniqueConvertOldSessionID(G, item->id[j]);
+      }
     }
     CPythonVal_Free(val);
   }

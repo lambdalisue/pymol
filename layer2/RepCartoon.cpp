@@ -50,14 +50,12 @@ void RepCartoonFree(RepCartoon * I);
 
 void RepCartoonFree(RepCartoon * I)
 {
-  if(I->ray)
-    CGOFree(I->ray);
+  if (I->ray != I->preshader)
+    CGOFree(I->preshader);
+  CGOFree(I->ray);
   if(I->pickingCGO && (I->pickingCGO != I->std))
     CGOFree(I->pickingCGO);
-  if(I->preshader && (I->ray!=I->preshader))
-    CGOFree(I->preshader);
-  if(I->std)
-    CGOFree(I->std);
+  CGOFree(I->std);
   FreeP(I->LastVisib);
   RepPurge(&I->R);
   OOFreeP(I);
@@ -161,6 +159,8 @@ static void RepCartoonRender(RepCartoon * I, RenderInfo * info)
     if(I->ray){
       int rok = CGORenderRay(I->ray, ray, NULL, I->R.cs->Setting, I->R.obj->Setting);
       if (!rok){
+        if (I->ray == I->preshader)
+          I->preshader = NULL;
 	CGOFree(I->ray);
 	I->ray = NULL;
 	try_std = true;
@@ -200,6 +200,8 @@ static void RepCartoonRender(RepCartoon * I, RenderInfo * info)
     }
   }
   if (!ok || !CGOHasOperationsOfType(I->ray, 0)){
+    if (I->ray == I->preshader)
+      I->preshader = NULL;
     CGOFree(I->ray);
     I->ray = NULL;
     CGOFree(I->std);
@@ -2812,7 +2814,7 @@ Rep *RepCartoonNew(CoordSet * cs, int state)
 
   cartoon_debug = SettingGet_i(G, cs->Setting, obj->Obj.Setting, cSetting_cartoon_debug);
 
-  trace = SettingGet_i(G, cs->Setting, obj->Obj.Setting, cSetting_cartoon_trace_atoms);
+  int trace_ostate = SettingGet_i(G, cs->Setting, obj->Obj.Setting, cSetting_cartoon_trace_atoms);
   trace_mode = SettingGet_i(G, cs->Setting, obj->Obj.Setting, cSetting_trace_atoms_mode);
   alpha =
     1.0F - SettingGet_f(G, cs->Setting, obj->Obj.Setting, cSetting_cartoon_transparency);
@@ -2926,6 +2928,11 @@ Rep *RepCartoonNew(CoordSet * cs, int state)
         }
         /*                        if(!obj->AtomInfo[a1].hetatm) */
         if((!ai->alt[0]) || (ai->alt[0] == 'A')) {
+
+          // atom level setting
+          AtomInfoGetSetting_i(G, ai, cSetting_cartoon_trace_atoms, trace_ostate, &trace);
+
+          // CA or cartoon_trace_atoms
           if(trace || (((ai->protons == cAN_C) &&
                         (WordMatch(G, "CA", ai->name, 1) < 0)) &&
                        !AtomInfoSameResidueP(G, last_ai, ai))) {
@@ -3028,6 +3035,23 @@ Rep *RepCartoonNew(CoordSet * cs, int state)
 
             fp++;
 
+            if (trace) {
+              if (a == 0 || a + 1 == cs->NIndex ||
+                  (a3 = cs->atmToIdx(a1 - 1)) == -1 ||
+                  (a4 = cs->atmToIdx(a1 + 1)) == -1) {
+                zero3f(vo);
+              } else {
+                float t0[3], t1[3];
+                subtract3f(cs->coordPtr(a), cs->coordPtr(a3), t0);
+                subtract3f(cs->coordPtr(a), cs->coordPtr(a4), t1);
+                add3f(t0, t1, vo);
+                normalize3f(vo);
+              }
+              vo += 3;
+              continue;
+            }
+
+            // pointers to C+N+O coordinates
             v_c = NULL;
             v_n = NULL;
             v_o = NULL;

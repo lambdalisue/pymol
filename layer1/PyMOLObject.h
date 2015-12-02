@@ -106,6 +106,11 @@ struct _CObject {
     if (fInvalidate)
       fInvalidate(this, rep, level, state);
   }
+  int getNFrame() {
+    if (fGetNFrame)
+      return fGetNFrame(this);
+    return 0;
+  }
 };
 
 void ObjectInit(PyMOLGlobals * G, CObject * I);
@@ -120,8 +125,8 @@ void ObjectUseColorCGO(CGO *cgo, CObject * I);
 void ObjectSetRepVis(CObject * I, int rep, int state);
 void ObjectToggleRepVis(CObject * I, int rep);
 void ObjectPrepareContext(CObject * I, CRay * ray);
-void ObjectSetTTT(CObject * I, float *ttt, int state,int store);
-int ObjectGetTTT(CObject * I, float **ttt, int state);
+void ObjectSetTTT(CObject * I, const float *ttt, int state,int store);
+int ObjectGetTTT(CObject * I, const float **ttt, int state);
 int ObjectGetTotalMatrix(CObject * I, int state, int history, double *matrix);
 void ObjectCombineTTT(CObject * I, float *ttt, int reverse_order, int store);
 void ObjectTranslateTTT(CObject * T, float *v,int store);
@@ -170,5 +175,14 @@ typedef struct _CObjectUpdateThreadInfo CObjectUpdateThreadInfo;
 #define cObjectTypeNonGroupObjects        8
 #define cObjectTypeGroupObjects           9
 /* Note: public objects are ones that do not start with "_" */
+
+// object and object-state level setting
+template <typename V> void SettingSet(int index, V value, CObject * obj, int state=-1) {
+  if (obj->fGetSettingHandle) {
+    auto handle = obj->fGetSettingHandle(obj, state);
+    if (handle)
+      SettingSet(obj->G, handle, index, value);
+  }
+}
 
 #endif
