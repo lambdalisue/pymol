@@ -1,4 +1,7 @@
 #!/bin/sh
+sudo apt-get build-dep pymol
+sudo apt-get install python-tk python-pmw
+
 if [ -z "$PREFIX" ]; then
     PREFIX=~/pymol
 fi
